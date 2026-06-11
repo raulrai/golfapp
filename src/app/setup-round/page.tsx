@@ -111,7 +111,6 @@ export default function SetupRound() {
                     border: `2px solid ${on ? 'var(--green)' : '#e5e7eb'}`,
                     borderRadius: 12, padding: '14px 16px', cursor: 'pointer',
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    opacity: !on && selected.length >= 4 ? 0.4 : 1,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{
@@ -137,7 +136,7 @@ export default function SetupRound() {
                 fontSize: 16, fontWeight: 700, cursor: selected.length >= 2 ? 'pointer' : 'default',
               }}
             >
-              Next: Course & Settings ({selected.length} selected)
+              Next: Course & Settings → {selected.length} player{selected.length !== 1 ? 's' : ''}
             </button>
           </>
         )}
