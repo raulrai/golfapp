@@ -36,8 +36,8 @@ function EnterScoreInner() {
   }, [roundParam])
 
   const myRounds = rounds.filter(r =>
-    r.players.some(p => p.player_id === myId) &&
-    !r.scores.some(s => s.player_id === myId)
+    r.players.some(p => Number(p.player_id) === myId) &&
+    !r.scores.some(s => Number(s.player_id) === myId)
   )
 
   async function submitScore() {
