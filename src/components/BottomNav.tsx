@@ -15,9 +15,9 @@ export default function BottomNav() {
   return (
     <nav style={{
       position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-      width: '100%', maxWidth: 480,
-      background: 'white',
-      borderTop: '1px solid #e5e7eb',
+      width: '100%', maxWidth: 480, zIndex: 40,
+      background: 'rgba(8, 24, 15, 0.96)', backdropFilter: 'blur(8px)',
+      borderTop: '1px solid var(--line)',
       display: 'flex',
       paddingBottom: 'env(safe-area-inset-bottom)',
     }}>
@@ -28,12 +28,12 @@ export default function BottomNav() {
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
             padding: '10px 0 8px',
             textDecoration: 'none',
-            color: active ? '#1B4332' : '#9ca3af',
+            color: active ? 'var(--gold)' : 'var(--muted)',
             fontSize: 10,
             fontWeight: active ? 700 : 400,
-            gap: 2,
+            gap: 3,
           }}>
-            <span style={{ fontSize: 22, lineHeight: 1 }}>{n.icon}</span>
+            <span style={{ fontSize: 21, lineHeight: 1, filter: active ? 'none' : 'grayscale(0.4) opacity(0.8)' }}>{n.icon}</span>
             {n.label}
           </Link>
         )

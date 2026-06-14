@@ -1,29 +1,116 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
 
 :root {
-  --background: #F8F6F0;
-  --foreground: #1a1a1a;
-  --green: #1B4332;
-  --green-light: #2D6A4F;
-  --green-pale: #f0f9f4;
-  --gold: #C9A84C;
-  --card: #FFFFFF;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --positive: #16a34a;
-  --negative: #dc2626;
+  --bg: #0a1f14;
+  --board: #0f2a1c;
+  --card: #143524;
+  --line: #1d4631;
+  --gold: #d9b25a;
+  --gold-dim: #9a8348;
+  --ink: #eaf2ec;
+  --muted: #84a591;
+  --pos: #5fd38a;
+  --neg: #e8755f;
+
+  --background: var(--bg);
+  --foreground: var(--ink);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
 }
 
+html { background: var(--bg); }
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: radial-gradient(120% 70% at 50% 0%, #11301f 0%, var(--bg) 55%), var(--bg);
+  color: var(--ink);
+  font-family: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   max-width: 480px;
   margin: 0 auto;
+  min-height: 100vh;
 }
+
+.serif { font-family: 'Fraunces', Georgia, 'Times New Roman', serif; }
+
+/* ---- screen scaffold ---- */
+.screen { min-height: 100vh; padding: 0 16px calc(env(safe-area-inset-bottom) + 96px); }
+
+.topbar { text-align: left; padding: 46px 4px 18px; }
+.topbar .crest { color: var(--gold); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; }
+.topbar h1 { font-family: 'Fraunces', Georgia, serif; font-size: 28px; font-weight: 600; margin: 4px 0 2px; color: var(--ink); }
+.topbar .sub { color: var(--muted); font-size: 13px; }
+
+.stack { display: flex; flex-direction: column; gap: 10px; }
+
+/* ---- list row cards ---- */
+.rowcard {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 13px 15px; display: flex; align-items: center; gap: 12px;
+}
+.rowcard.me { border-color: var(--gold); }
+.rname { font-weight: 700; font-size: 16px; color: var(--ink); }
+.rsub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.rval { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); }
+.rval.sm { font-size: 16px; }
+
+.rank {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--board); border: 1px solid var(--line);
+  color: var(--muted); font-weight: 800; font-size: 13px;
+}
+.rank.gold { background: var(--gold); border-color: var(--gold); color: #1a1206; }
+.rank.silver { background: #c7d0cb; border-color: #c7d0cb; color: #1a1206; }
+.rank.bronze { background: #cd8a4f; border-color: #cd8a4f; color: #1a1206; }
+
+.muted { color: var(--muted); }
+.pos { color: var(--pos); }
+.neg { color: var(--neg); }
+.gold-text { color: var(--gold); }
+
+/* ---- stat cards (home) ---- */
+.statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 15px; }
+.stat .label { font-size: 11px; color: var(--gold); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600; }
+.stat .value { font-size: 24px; font-weight: 800; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.stat .sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* ---- big CTA card ---- */
+.cta-card {
+  display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dim) 100%);
+  border-radius: 16px; padding: 20px; text-decoration: none;
+}
+.cta-card .ttl { color: #1a1206; font-weight: 800; font-size: 18px; }
+.cta-card .desc { color: rgba(26,18,6,0.7); font-size: 13px; margin-top: 2px; }
+.cta-card .chev { color: rgba(26,18,6,0.55); font-size: 28px; }
+
+/* ---- section panel ---- */
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.panel-head .lbl { font-size: 11px; color: var(--gold); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600; }
+.panel-head a { font-size: 13px; color: var(--gold); font-weight: 600; text-decoration: none; }
+.panel-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.panel-row:last-child { border-bottom: none; }
+
+/* ---- player picker sheet ---- */
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 60; display: flex; align-items: flex-end; }
+.sheet {
+  background: var(--board); border: 1px solid var(--line); border-radius: 20px 20px 0 0;
+  width: 100%; max-width: 480px; max-height: 80vh; overflow: auto; padding: 22px 16px 44px; margin: 0 auto;
+}
+.sheet .grip { width: 36px; height: 4px; background: var(--line); border-radius: 4px; margin: 0 auto 18px; }
+.sheet h2 { font-family: 'Fraunces', serif; font-size: 20px; text-align: center; color: var(--ink); margin-bottom: 16px; }
+.sheet button {
+  width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 13px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+  color: var(--ink); font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.sheet button.on { border-color: var(--gold); }
+
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70vh; gap: 8px; text-align: center; }
+.empty .big { font-size: 48px; }
