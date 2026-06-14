@@ -144,6 +144,33 @@
 .ap-line { border-top: 1px dashed var(--line); margin-top: 6px; padding-top: 8px; }
 .ap-string { font-family: 'Fraunces', Georgia, serif; font-size: 18px; letter-spacing: 1px; color: var(--ink); }
 
+/* ---- auto press three bets ---- */
+.ap-block { display: flex; flex-direction: column; gap: 2px; }
+.ap-head .mstat { font-size: 11px; color: var(--gold); font-weight: 600; }
+.ap-bet { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 13px; }
+.ap-betlbl { font-size: 10px; color: var(--gold); letter-spacing: 1px; text-transform: uppercase; width: 64px; flex-shrink: 0; }
+.ap-bet .ap-string { flex: 1; font-size: 16px; }
+.ap-money { font-weight: 800; font-variant-numeric: tabular-nums; font-size: 12px; }
+.ap-money.as, .as { color: var(--muted); }
+.ap-money.up-a, .up-a { color: var(--rp); }
+.ap-money.up-b, .up-b { color: var(--jj); }
+
+/* ---- save / settlement ---- */
+.save-card {
+  background: var(--board); border: 1px solid var(--gold); border-radius: 12px;
+  padding: 16px; margin: 14px 0 220px; /* clear the fixed match bar */
+}
+.settle-list { margin: 10px 0 16px; display: flex; flex-direction: column; gap: 6px; }
+.settle-row { display: flex; justify-content: space-between; font-size: 14px; color: var(--ink); }
+.settle-row span:last-child { font-weight: 800; font-variant-numeric: tabular-nums; }
+.saved-msg { color: var(--gold); font-weight: 700; text-align: center; margin-bottom: 12px; }
+.err-msg { color: var(--jj); font-size: 13px; text-align: center; margin-top: 10px; }
+.rank-pip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%; background: var(--gold); color: #1a1206;
+  font-size: 11px; font-weight: 800; margin-right: 8px;
+}
+
 .complete-banner {
   background: var(--board); border: 1px solid var(--gold); border-radius: 12px;
   padding: 14px; text-align: center; margin: 12px 0; font-size: 13.5px; color: #cfe0d5;

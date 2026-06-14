@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import './play.css'
 import {
-  COURSE, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName,
+  COURSE, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName, playerMoney,
 } from '@/lib/golf/game'
 import type { Game, GamePlayer } from '@/lib/golf/game'
 import { fieldStrokes } from '@/lib/golf/strokes'
@@ -47,6 +47,7 @@ function Setup({ onStart }: { onStart: (g: Game) => void }) {
   const [mode, setMode] = useState<ScoringMode | null>(null)
   const [format, setFormat] = useState<Format | null>(null)
   const [teamA, setTeamA] = useState<number[]>([])
+  const [stake, setStake] = useState(100)
 
   useEffect(() => {
     fetch('/api/players')
@@ -112,6 +113,7 @@ function Setup({ onStart }: { onStart: (g: Game) => void }) {
       scoringMode: mode!,
       format: needFormat ? format! : 'match',
       teamA: a, teamB: b, singles,
+      stake,
       scores: {},
     })
   }
@@ -171,6 +173,17 @@ function Setup({ onStart }: { onStart: (g: Game) => void }) {
         </div>
       )}
 
+      {mode === 'hole' && (format === 'autopress' || format === 'both') && (
+        <div className="setup-step">
+          <div className="setup-label">Stake · ₹ per Auto Press match</div>
+          <div className="seg cols-4">
+            {[50, 100, 200, 500].map((v) => (
+              <button key={v} className={stake === v ? 'on' : ''} onClick={() => setStake(v)}>₹{v}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {needTeams && mode !== null && (
         <div className="setup-step">
           <div className="setup-label">Team A · pick 2 ({teamA.length}/2) · rest are Team B</div>
@@ -222,6 +235,13 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
 
   if (game.scoringMode === 'total') return <TotalEntry game={game} onChange={onChange} />
 
+  const allComplete = (() => {
+    for (let h = 1; h <= 18; h++) {
+      if (!game.players.every((p) => typeof game.scores[h]?.[p.id] === 'number')) return false
+    }
+    return true
+  })()
+
   const info = COURSE.holes[hole - 1]
 
   const setScore = (pid: PlayerId, score: number | null) => {
@@ -272,6 +292,8 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
       </div>
 
       <MatchBar game={game} />
+
+      {allComplete && <SaveSection game={game} onChange={onChange} />}
     </div>
   )
 }
@@ -352,10 +374,29 @@ function MatchBar({ game }: { game: Game }) {
         )
       })}
       {ap && (
-        <div className={`mline ${matches.length ? 'ap-line' : ''}`}>
-          <span className="mkind">Auto Press</span>
-          <span className="mwho">{ap.thru === 0 ? 'starts at hole 1' : ap.leader ? `${shortSide(game, ap.leader)} +${Math.abs(ap.margin)}` : 'all square'}</span>
-          <span className="ap-string">{ap.string}</span>
+        <div className={`ap-block ${matches.length ? 'ap-line' : ''}`}>
+          <div className="mline ap-head">
+            <span className="mkind">Auto Press</span>
+            <span className="mwho">
+              {ap.thru === 0
+                ? 'starts at hole 1'
+                : ap.leader
+                  ? `${shortSide(game, ap.leader)} leads ₹${Math.abs(ap.moneyToA).toLocaleString('en-IN')}`
+                  : 'all square'}
+            </span>
+            <span className="mstat">@ ₹{game.stake}/match</span>
+          </div>
+          {ap.bets.map((b) => (
+            <div className="ap-bet" key={b.key}>
+              <span className="ap-betlbl">{b.label}</span>
+              <span className="ap-string">{b.thru === 0 ? '—' : b.string}</span>
+              <span className={`ap-money ${b.settlement.netToA === 0 ? 'as' : b.settlement.netToA > 0 ? 'up-a' : 'up-b'}`}>
+                {b.settlement.netToA === 0
+                  ? 'level'
+                  : `${shortSide(game, b.settlement.netToA > 0 ? game.teamA : game.teamB)} ₹${Math.abs(b.settlement.netToA * game.stake).toLocaleString('en-IN')}`}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -364,6 +405,69 @@ function MatchBar({ game }: { game: Game }) {
 
 const shortSide = (game: Game, side: PlayerId[]) =>
   side.map((id) => playerName(game, id).split(' ')[0]).join('&')
+
+async function saveRound(game: Game): Promise<{ ok: boolean; error?: string }> {
+  const money = playerMoney(game)
+  const res = await fetch('/api/play-rounds', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scoringMode: game.scoringMode,
+      handicap_pct: 75,
+      players: game.players.map((p) => ({ id: p.id, strokes: p.strokes })),
+      scores: game.scores,
+      money,
+    }),
+  })
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}))
+    return { ok: false, error: d.error ?? 'Save failed' }
+  }
+  return { ok: true }
+}
+
+function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null) => void }) {
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [err, setErr] = useState('')
+  const money = playerMoney(game)
+  const showMoney = game.format === 'autopress' || game.format === 'both'
+
+  const save = async () => {
+    setStatus('saving')
+    const r = await saveRound(game)
+    if (r.ok) setStatus('saved')
+    else { setStatus('error'); setErr(r.error ?? '') }
+  }
+
+  return (
+    <div className="save-card">
+      <div className="setup-label">Round complete</div>
+      {showMoney && (
+        <div className="settle-list">
+          {[...game.players].sort((a, b) => money[b.id] - money[a.id]).map((p) => (
+            <div className="settle-row" key={p.id}>
+              <span>{p.name}</span>
+              <span className={money[p.id] > 0 ? 'up-a' : money[p.id] < 0 ? 'up-b' : 'as'}>
+                {money[p.id] === 0 ? '—' : `${money[p.id] > 0 ? '+' : '−'}₹${Math.abs(money[p.id]).toLocaleString('en-IN')}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {status === 'saved' ? (
+        <>
+          <div className="saved-msg">✓ Saved — handicaps &amp; money updated</div>
+          <button className="cta ghost" onClick={() => onChange(null)}>Start a new round</button>
+        </>
+      ) : (
+        <button className="cta" disabled={status === 'saving'} onClick={save}>
+          {status === 'saving' ? 'Saving…' : 'Save Round'}
+        </button>
+      )}
+      {status === 'error' && <div className="err-msg">⚠ {err}</div>}
+    </div>
+  )
+}
 
 /* ───────────────────────── Total-only entry ───────────────────────── */
 
@@ -375,30 +479,42 @@ function TotalEntry({ game, onChange }: { game: Game; onChange: (g: Game | null)
     else scores[0][pid] = v
     onChange({ ...game, scores })
   }
+
+  const allIn = game.players.every((p) => typeof game.scores[0]?.[p.id] === 'number')
+  // rank by net (lowest first), only meaningful once any total is in
+  const ranked = [...game.players]
+    .map((p) => ({ p, total: game.scores[0]?.[p.id], net: typeof game.scores[0]?.[p.id] === 'number' ? (game.scores[0]![p.id] as number) - p.strokes : null }))
+    .sort((a, b) => (a.net ?? 999) - (b.net ?? 999))
+
   return (
     <div>
       <div className="setup-label" style={{ marginTop: 10 }}>Total gross score</div>
-      {game.players.map((p) => {
-        const total = game.scores[0]?.[p.id]
-        const net = typeof total === 'number' ? total - p.strokes : null
-        return (
-          <div className="score-card" key={p.id}>
-            <div className="prow">
-              <div><span className="pname">{p.name}</span><span className="pstroke">{p.strokes} strokes</span></div>
-              <span className="ptotal">{net !== null ? `net ${net}` : '—'}</span>
+      {ranked.map(({ p, total, net }, i) => (
+        <div className="score-card" key={p.id}>
+          <div className="prow">
+            <div>
+              {net !== null && <span className="rank-pip">{i + 1}</span>}
+              <span className="pname">{p.name}</span>
+              {p.strokes > 0 && <span className="pstroke">{p.strokes} strokes</span>}
             </div>
-            <input
-              className="cta ghost"
-              style={{ textAlign: 'center', fontSize: 22 }}
-              inputMode="numeric"
-              placeholder="gross"
-              value={total ?? ''}
-              onChange={(e) => setTotal(p.id, e.target.value ? Number(e.target.value) : null)}
-            />
+            <span className="ptotal">{net !== null ? `net ${net}` : '—'}</span>
           </div>
-        )
-      })}
-      <button className="cta ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>End Round</button>
+          <input
+            className="cta ghost"
+            style={{ textAlign: 'center', fontSize: 22 }}
+            inputMode="numeric"
+            placeholder="gross"
+            value={total ?? ''}
+            onChange={(e) => setTotal(p.id, e.target.value ? Number(e.target.value) : null)}
+          />
+        </div>
+      ))}
+
+      {allIn ? (
+        <SaveSection game={game} onChange={onChange} />
+      ) : (
+        <button className="cta ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>End Round</button>
+      )}
     </div>
   )
 }
