@@ -29,6 +29,8 @@ export interface Game {
   /** rupees per Auto Press match (each digit is one bet at this stake) */
   stake: number
   scores: Scores
+  /** total-only mode: manually entered winnings per player (₹, may be ±) */
+  money?: Record<PlayerId, number>
 }
 
 export const strokesById = (g: Game): Record<PlayerId, number> =>
@@ -144,6 +146,19 @@ export function playerMoney(g: Game): Record<PlayerId, number> {
     for (const id of g.teamB) out[id] -= moneyToA
   }
   return out
+}
+
+/**
+ * Money to persist for a game. Total-only mode uses the manually entered
+ * winnings; hole-by-hole derives money from the Auto Press settlement.
+ */
+export function effectiveMoney(g: Game): Record<PlayerId, number> {
+  if (g.scoringMode === 'total') {
+    const out: Record<PlayerId, number> = {}
+    for (const p of g.players) out[p.id] = g.money?.[p.id] ?? 0
+    return out
+  }
+  return playerMoney(g)
 }
 
 // ---------- persistence (active game in localStorage) ----------
