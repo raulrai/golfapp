@@ -2,9 +2,10 @@
 import { useEffect, useState } from 'react'
 import './play.css'
 import {
-  COURSE, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName, playerMoney,
+  COURSE, courseOf, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName, playerMoney,
 } from '@/lib/golf/game'
 import type { Game, GamePlayer } from '@/lib/golf/game'
+import type { CourseMeta } from '@/lib/golf/course'
 import { fieldStrokes } from '@/lib/golf/strokes'
 import type { Format, PlayerId, ScoringMode } from '@/lib/golf/types'
 
@@ -12,11 +13,16 @@ type RosterPlayer = { id: number; name: string; handicap: number }
 
 export default function PlayPage() {
   const [game, setGame] = useState<Game | null>(null)
+  const [course, setCourse] = useState<CourseMeta>(COURSE)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     setGame(loadGame())
     setLoaded(true)
+    fetch('/api/course')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((c: CourseMeta) => { if (c?.holes?.length) setCourse(c) })
+      .catch(() => { /* keep the bundled fallback course */ })
   }, [])
 
   const update = (g: Game | null) => {
@@ -31,16 +37,18 @@ export default function PlayPage() {
       <header className="play-head">
         <div className="crest">⛳ Delhi Golf Club ⛳</div>
         <h1 className="serif">The Round</h1>
-        <div className="sub">{COURSE.short} · {COURSE.tees}</div>
+        <div className="sub">{course.short} · {course.tees}</div>
       </header>
-      {game ? <Scoring game={game} onChange={update} /> : <Setup onStart={update} />}
+      {game
+        ? <Scoring game={game} onChange={update} />
+        : <Setup course={course} onStart={update} />}
     </div>
   )
 }
 
 /* ───────────────────────── Setup ───────────────────────── */
 
-function Setup({ onStart }: { onStart: (g: Game) => void }) {
+function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => void }) {
   const [roster, setRoster] = useState<RosterPlayer[]>([])
   const [count, setCount] = useState<2 | 4 | null>(null)
   const [picked, setPicked] = useState<number[]>([])
@@ -115,6 +123,7 @@ function Setup({ onStart }: { onStart: (g: Game) => void }) {
       teamA: a, teamB: b, singles,
       stake,
       scores: {},
+      course,
     })
   }
 
@@ -148,7 +157,7 @@ function Setup({ onStart }: { onStart: (g: Game) => void }) {
       {count && picked.length === count && (
         <div className="setup-step">
           <div className="setup-label">Course</div>
-          <div className="team-col"><div className="slot filled">{COURSE.name} · {COURSE.tees}</div></div>
+          <div className="team-col"><div className="slot filled">{course.name} · {course.tees}</div></div>
         </div>
       )}
 
@@ -242,7 +251,8 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
     return true
   })()
 
-  const info = COURSE.holes[hole - 1]
+  const course = courseOf(game)
+  const info = course.holes[hole - 1]
 
   const setScore = (pid: PlayerId, score: number | null) => {
     const scores = { ...game.scores, [hole]: { ...game.scores[hole] } }
@@ -257,7 +267,7 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
   return (
     <div>
       <div className="hole-head">
-        <span className="course-chip">{COURSE.short}</span>
+        <span className="course-chip">{course.short}</span>
         <div className="hole-num-row">
           <button className="hole-nav-btn" disabled={hole === 1} onClick={() => setHole(hole - 1)}>‹</button>
           <div>
@@ -306,6 +316,7 @@ function ScoreRow({
   const base = [par - 2, par - 1, par, par + 1, par + 2, par + 3].filter((v) => v >= 1)
   const overflow = typeof value === 'number' && value > par + 3 ? value : null
   const strokes = holeStrokes(game, player.id, hole)
+  const holes = courseOf(game).holes
 
   // running net vs par
   let gross = 0, n = 0, net = 0
@@ -313,7 +324,7 @@ function ScoreRow({
     const s = game.scores[h]?.[player.id]
     if (typeof s === 'number') {
       gross += s; n++
-      net += s - holeStrokes(game, player.id, h) - COURSE.holes[h - 1].par
+      net += s - holeStrokes(game, player.id, h) - holes[h - 1].par
     }
   }
 
