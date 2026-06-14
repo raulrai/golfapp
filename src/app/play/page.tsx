@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import './play.css'
 import {
-  COURSE, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName, playerMoney,
+  COURSE, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName, effectiveMoney,
 } from '@/lib/golf/game'
 import type { Game, GamePlayer } from '@/lib/golf/game'
 import { fieldStrokes } from '@/lib/golf/strokes'
@@ -407,7 +407,7 @@ const shortSide = (game: Game, side: PlayerId[]) =>
   side.map((id) => playerName(game, id).split(' ')[0]).join('&')
 
 async function saveRound(game: Game): Promise<{ ok: boolean; error?: string }> {
-  const money = playerMoney(game)
+  const money = effectiveMoney(game)
   const res = await fetch('/api/play-rounds', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -429,8 +429,9 @@ async function saveRound(game: Game): Promise<{ ok: boolean; error?: string }> {
 function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null) => void }) {
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [err, setErr] = useState('')
-  const money = playerMoney(game)
-  const showMoney = game.format === 'autopress' || game.format === 'both'
+  const money = effectiveMoney(game)
+  const showMoney =
+    game.scoringMode === 'total' || game.format === 'autopress' || game.format === 'both'
 
   const save = async () => {
     setStatus('saving')
@@ -480,15 +481,25 @@ function TotalEntry({ game, onChange }: { game: Game; onChange: (g: Game | null)
     onChange({ ...game, scores })
   }
 
+  const setMoney = (pid: PlayerId, v: number | null) => {
+    const money = { ...(game.money ?? {}) }
+    if (v === null) delete money[pid]
+    else money[pid] = v
+    onChange({ ...game, money })
+  }
+
   const allIn = game.players.every((p) => typeof game.scores[0]?.[p.id] === 'number')
   // rank by net (lowest first), only meaningful once any total is in
   const ranked = [...game.players]
     .map((p) => ({ p, total: game.scores[0]?.[p.id], net: typeof game.scores[0]?.[p.id] === 'number' ? (game.scores[0]![p.id] as number) - p.strokes : null }))
     .sort((a, b) => (a.net ?? 999) - (b.net ?? 999))
 
+  const balance = game.players.reduce((acc, p) => acc + (game.money?.[p.id] ?? 0), 0)
+
   return (
     <div>
-      <div className="setup-label" style={{ marginTop: 10 }}>Total gross score</div>
+      <div className="setup-label" style={{ marginTop: 10 }}>Final score &amp; winnings</div>
+      <div className="total-hint">Enter each player&apos;s gross total and their winnings (₹). No match play or Auto Press — this just updates handicaps and money.</div>
       {ranked.map(({ p, total, net }, i) => (
         <div className="score-card" key={p.id}>
           <div className="prow">
@@ -499,18 +510,39 @@ function TotalEntry({ game, onChange }: { game: Game; onChange: (g: Game | null)
             </div>
             <span className="ptotal">{net !== null ? `net ${net}` : '—'}</span>
           </div>
-          <input
-            className="cta ghost"
-            style={{ textAlign: 'center', fontSize: 22 }}
-            inputMode="numeric"
-            placeholder="gross"
-            value={total ?? ''}
-            onChange={(e) => setTotal(p.id, e.target.value ? Number(e.target.value) : null)}
-          />
+          <div className="total-inputs">
+            <label className="total-field">
+              <span>Gross</span>
+              <input
+                className="total-input"
+                inputMode="numeric"
+                placeholder="score"
+                value={total ?? ''}
+                onChange={(e) => setTotal(p.id, e.target.value ? Number(e.target.value) : null)}
+              />
+            </label>
+            <label className="total-field">
+              <span>Winnings ₹</span>
+              <input
+                className="total-input"
+                inputMode="numeric"
+                placeholder="± ₹"
+                value={game.money?.[p.id] ?? ''}
+                onChange={(e) => {
+                  const t = e.target.value.replace(/[^0-9-]/g, '')
+                  setMoney(p.id, t === '' || t === '-' ? null : Number(t))
+                }}
+              />
+            </label>
+          </div>
         </div>
       ))}
 
-      {allIn ? (
+      <div className={`pot-balance ${balance === 0 ? 'level' : 'off'}`}>
+        Pot balance: {balance === 0 ? 'level ✓' : `${balance > 0 ? '+' : '−'}₹${Math.abs(balance).toLocaleString('en-IN')} — must net to zero before saving`}
+      </div>
+
+      {allIn && balance === 0 ? (
         <SaveSection game={game} onChange={onChange} />
       ) : (
         <button className="cta ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>End Round</button>
