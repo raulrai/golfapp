@@ -1,0 +1,150 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
+
+/* Dark/gold hole-by-hole theme, scoped to the Play experience. */
+.play {
+  --bg: #0a1f14;
+  --board: #0f2a1c;
+  --card: #143524;
+  --line: #1d4631;
+  --gold: #d9b25a;
+  --gold-dim: #9a8348;
+  --ink: #eaf2ec;
+  --muted: #84a591;
+  --rp: #7cc4ff;
+  --jj: #f2a65a;
+  --pos: #5fd38a;
+  --neg: #e8755f;
+
+  min-height: 100vh;
+  background: radial-gradient(120% 80% at 50% 0%, #11301f 0%, var(--bg) 60%), var(--bg);
+  color: var(--ink);
+  font-family: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 0 14px calc(env(safe-area-inset-bottom) + 150px);
+}
+
+.play * { box-sizing: border-box; }
+
+.play .serif {
+  font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+}
+
+/* ---- header ---- */
+.play-head {
+  text-align: center;
+  padding: 30px 0 14px;
+}
+.play-head .crest { color: var(--gold); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; }
+.play-head h1 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 30px; margin: 4px 0 2px; color: var(--ink); font-weight: 600;
+}
+.play-head .sub { color: var(--muted); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+
+/* ---- setup ---- */
+.setup-step { margin-bottom: 22px; }
+.setup-label {
+  color: var(--gold); font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+  margin-bottom: 10px; font-weight: 600;
+}
+.seg { display: grid; gap: 8px; grid-template-columns: repeat(2, 1fr); }
+.seg.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.seg.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.seg button, .roster button {
+  background: var(--card); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 12px; padding: 13px 10px; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all .12s ease; font-family: inherit;
+}
+.seg button.on, .roster button.on {
+  background: var(--gold); border-color: var(--gold); color: #1a1206;
+}
+.seg button:disabled { opacity: .35; cursor: not-allowed; }
+.seg .lbl-sub { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; letter-spacing: .5px; text-transform: uppercase; }
+.seg button.on .lbl-sub { color: #5a4a1e; }
+
+.roster { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.roster button { display: flex; justify-content: space-between; align-items: center; }
+.roster button .hcp { font-size: 11px; color: var(--muted); font-weight: 700; }
+.roster button.on .hcp { color: #5a4a1e; }
+
+.team-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.team-col { background: var(--board); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.team-col h4 { margin: 0 0 8px; color: var(--gold); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+.team-col .slot {
+  background: var(--card); border: 1px dashed var(--line); border-radius: 10px;
+  padding: 10px; margin-bottom: 6px; font-size: 13px; color: var(--muted); text-align: center;
+}
+.team-col .slot.filled { border-style: solid; color: var(--ink); font-weight: 600; }
+
+.cta {
+  width: 100%; background: var(--gold); color: #1a1206; border: none;
+  border-radius: 14px; padding: 16px; font-size: 16px; font-weight: 800; cursor: pointer;
+  font-family: inherit; letter-spacing: .3px;
+}
+.cta:disabled { opacity: .4; cursor: not-allowed; }
+.cta.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); font-weight: 600; }
+
+/* ---- hole head ---- */
+.hole-head { text-align: center; padding: 18px 0 6px; }
+.course-chip {
+  display: inline-block; color: var(--gold); font-size: 11px; letter-spacing: 2px;
+  text-transform: uppercase; margin-bottom: 8px;
+}
+.hole-num-row { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.hole-nav-btn {
+  width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); color: var(--gold); font-size: 22px; cursor: pointer; line-height: 1;
+}
+.hole-nav-btn:disabled { opacity: .3; cursor: not-allowed; }
+.hole-num { font-family: 'Fraunces', Georgia, serif; font-size: 60px; line-height: 1; color: var(--ink); font-weight: 600; }
+.hole-meta { color: var(--muted); font-size: 13px; letter-spacing: 1px; margin-top: 4px; }
+.hole-meta b { color: var(--ink); }
+
+.tam-tip {
+  background: var(--board); border: 1px solid var(--line); border-left: 3px solid var(--gold);
+  border-radius: 12px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: #cfe0d5;
+  margin: 12px 0;
+}
+.tam-label { display: block; color: var(--gold); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; font-weight: 600; }
+
+/* ---- score card ---- */
+.score-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+.prow { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
+.pname { font-size: 16px; font-weight: 700; color: var(--ink); }
+.pteam { font-size: 11px; color: var(--gold); margin-left: 7px; letter-spacing: 1px; }
+.pstroke { font-size: 10px; color: var(--muted); margin-left: 6px; }
+.ptotal { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.chips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.chip {
+  background: var(--board); border: 1px solid var(--line); border-radius: 9px;
+  padding: 8px 2px; text-align: center; cursor: pointer; transition: all .1s ease;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.chip .n { font-family: 'Fraunces', Georgia, serif; font-size: 18px; font-weight: 600; color: var(--ink); }
+.chip .lbl { font-size: 8px; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; }
+.chip.par-chip { border-color: var(--gold-dim); }
+.chip.selected { background: var(--gold); border-color: var(--gold); }
+.chip.selected .n, .chip.selected .lbl { color: #1a1206; }
+
+/* ---- match bar ---- */
+.match-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  max-width: 480px; margin: 0 auto;
+  background: rgba(8, 24, 15, 0.96); backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+  padding: 10px 14px calc(env(safe-area-inset-bottom) + 10px);
+}
+.mline { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.mkind { font-size: 10px; color: var(--gold); letter-spacing: 1px; text-transform: uppercase; width: 64px; flex-shrink: 0; white-space: nowrap; }
+.mwho { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mstat { font-weight: 800; font-variant-numeric: tabular-nums; }
+.mstat.as { color: var(--muted); }
+.mstat.up-a { color: var(--rp); }
+.mstat.up-b { color: var(--jj); }
+.ap-line { border-top: 1px dashed var(--line); margin-top: 6px; padding-top: 8px; }
+.ap-string { font-family: 'Fraunces', Georgia, serif; font-size: 18px; letter-spacing: 1px; color: var(--ink); }
+
+.complete-banner {
+  background: var(--board); border: 1px solid var(--gold); border-radius: 12px;
+  padding: 14px; text-align: center; margin: 12px 0; font-size: 13.5px; color: #cfe0d5;
+}
