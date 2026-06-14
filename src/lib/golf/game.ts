@@ -1,8 +1,8 @@
 import { DELHI_LODHI_BLUE } from './course.ts'
 import { computeMatch } from './matchplay.ts'
 import { strokesOnHole } from './strokes.ts'
-import { runAutoPress, renderAutoPress, autoPressMargin } from './autopress.ts'
-import type { HoleResult } from './autopress.ts'
+import { autoPressBets } from './autopress.ts'
+import type { HoleResult, AutoPressBet } from './autopress.ts'
 import type { Format, MatchState, PlayerId, Scores, ScoringMode } from './types.ts'
 
 export const COURSE = DELHI_LODHI_BLUE
@@ -26,6 +26,8 @@ export interface Game {
   teamB: PlayerId[]
   /** head-to-heads to display when 4 play (e.g. A0 v B0, A1 v B1) */
   singles: [PlayerId, PlayerId][]
+  /** rupees per Auto Press match (each digit is one bet at this stake) */
+  stake: number
   scores: Scores
 }
 
@@ -107,22 +109,41 @@ export function holeResults(g: Game): HoleResult[] {
 }
 
 export interface LiveAutoPress {
-  string: string
-  margin: number
+  /** front-9, back-9 and overall bets */
+  bets: AutoPressBet[]
+  /** net matches to Team A across all three bets */
+  netMatchesToA: number
+  /** rupees to Team A (negative = Team B ahead) across all three bets */
+  moneyToA: number
+  /** the side currently ahead on money, or null if level */
   leader: PlayerId[] | null
   thru: number
 }
 
 export function liveAutoPress(g: Game): LiveAutoPress {
   const results = holeResults(g)
-  const state = runAutoPress(results)
-  const margin = autoPressMargin(state)
+  const bets = autoPressBets(results)
+  const netMatchesToA = bets.reduce((acc, b) => acc + b.settlement.netToA, 0)
+  const moneyToA = netMatchesToA * g.stake
   return {
-    string: renderAutoPress(state),
-    margin,
-    leader: margin === 0 ? null : margin > 0 ? g.teamA : g.teamB,
+    bets,
+    netMatchesToA,
+    moneyToA,
+    leader: moneyToA === 0 ? null : moneyToA > 0 ? g.teamA : g.teamB,
     thru: results.length,
   }
+}
+
+/** Per-player money (₹). Auto-press side bet booked in full by each partner. */
+export function playerMoney(g: Game): Record<PlayerId, number> {
+  const out: Record<PlayerId, number> = {}
+  for (const p of g.players) out[p.id] = 0
+  if (g.format === 'autopress' || g.format === 'both') {
+    const { moneyToA } = liveAutoPress(g)
+    for (const id of g.teamA) out[id] += moneyToA
+    for (const id of g.teamB) out[id] -= moneyToA
+  }
+  return out
 }
 
 // ---------- persistence (active game in localStorage) ----------

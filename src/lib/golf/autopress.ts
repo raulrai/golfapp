@@ -66,3 +66,67 @@ export function runAutoPress(results: HoleResult[]): AutoPressState {
   for (const r of results) s = autoPressStep(s, r)
   return s
 }
+
+/**
+ * Settle a single string: each match (digit) is its own bet worth one stake.
+ * `presses[i] > 0` means that match's owner is ahead; the owner is Team A on
+ * odd positions (even index) and Team B on even positions (odd index).
+ * Halved matches (margin 0) push.
+ */
+export interface AutoPressSettlement {
+  aWon: number
+  bWon: number
+  pushes: number
+  /** net matches to Team A (aWon − bWon) */
+  netToA: number
+}
+
+export function settleAutoPress(state: AutoPressState): AutoPressSettlement {
+  let aWon = 0
+  let bWon = 0
+  let pushes = 0
+  state.presses.forEach((v, i) => {
+    if (v === 0) { pushes++; return }
+    const ownerIsA = i % 2 === 0
+    const ownerAhead = v > 0
+    const winnerIsA = ownerIsA ? ownerAhead : !ownerAhead
+    if (winnerIsA) aWon++
+    else bWon++
+  })
+  return { aWon, bWon, pushes, netToA: aWon - bWon }
+}
+
+/**
+ * The three Auto Press bets from a full list of hole results (front, back,
+ * overall). Front = holes 1–9, back = holes 10–18 (a fresh string), overall =
+ * one continuous string across all 18. Each is settled independently.
+ */
+export interface AutoPressBet {
+  key: 'front' | 'back' | 'overall'
+  label: string
+  state: AutoPressState
+  string: string
+  margin: number
+  settlement: AutoPressSettlement
+  thru: number
+}
+
+export function autoPressBets(results: HoleResult[]): AutoPressBet[] {
+  const front = results.slice(0, 9)
+  const back = results.slice(9, 18)
+  const make = (key: AutoPressBet['key'], label: string, res: HoleResult[]): AutoPressBet => {
+    const state = runAutoPress(res)
+    return {
+      key, label, state,
+      string: renderAutoPress(state),
+      margin: autoPressMargin(state),
+      settlement: settleAutoPress(state),
+      thru: res.length,
+    }
+  }
+  return [
+    make('front', 'Front 9', front),
+    make('back', 'Back 9', back),
+    make('overall', 'Overall', results),
+  ]
+}

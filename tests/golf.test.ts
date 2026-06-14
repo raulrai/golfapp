@@ -2,7 +2,7 @@
 import { DELHI_LODHI_BLUE } from '../src/lib/golf/course.ts'
 import { computeMatch } from '../src/lib/golf/matchplay.ts'
 import { strokesOnHole, fieldStrokes } from '../src/lib/golf/strokes.ts'
-import { runAutoPress, renderAutoPress } from '../src/lib/golf/autopress.ts'
+import { runAutoPress, renderAutoPress, settleAutoPress, autoPressBets } from '../src/lib/golf/autopress.ts'
 import type { HoleResult } from '../src/lib/golf/autopress.ts'
 import type { Scores } from '../src/lib/golf/types.ts'
 
@@ -92,6 +92,24 @@ for (const fx of FIXTURES) {
   ok(`AutoPress ${fx.name}: ${holesMatched}/${fx.expected.length} holes`, all,
     all ? '' : `\n   exp ${fx.expected.join('  ')}\n   got ${got.join('  ')}`)
 }
+
+// ---------- Auto Press settlement (each match is one bet) ----------
+// Opening "1-1-1": positions A,B,A -> winner (A) takes 2 of 3 matches, net +1 to A.
+const s1 = settleAutoPress(runAutoPress(['A']))
+ok('settle: opening hole nets +1 matches to winner', s1.aWon === 2 && s1.bWon === 1 && s1.netToA === 1, `got ${JSON.stringify(s1)}`)
+
+// Halved string keeps a zero (push) match out of the tally.
+const sPush = settleAutoPress(runAutoPress(['A', 'B', 'B', 'B']))
+ok('settle: zero-margin matches push', sPush.pushes >= 1, `got ${JSON.stringify(sPush)}`)
+
+// Three bets: front uses holes 1-9, back uses 10-18 (fresh), overall is continuous.
+const eighteen: HoleResult[] = ['A', 'B', 'B', 'B', 'B', 'B', 'A', 'A', 'A', 'B', 'B', 'A', 'A', 'H', 'A', 'B', 'A', 'A']
+const bets = autoPressBets(eighteen)
+ok('bets: three bets keyed front/back/overall',
+  bets.length === 3 && bets[0].key === 'front' && bets[1].key === 'back' && bets[2].key === 'overall')
+ok('bets: front matches a 9-hole run', bets[0].string === renderAutoPress(runAutoPress(eighteen.slice(0, 9))))
+ok('bets: back is a fresh string from hole 10', bets[1].string === renderAutoPress(runAutoPress(eighteen.slice(9))))
+ok('bets: overall spans all 18', bets[2].thru === 18)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1
