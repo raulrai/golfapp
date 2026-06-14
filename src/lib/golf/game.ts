@@ -1,11 +1,16 @@
 import { DELHI_LODHI_BLUE } from './course.ts'
+import type { CourseMeta } from './course.ts'
 import { computeMatch } from './matchplay.ts'
 import { strokesOnHole } from './strokes.ts'
 import { autoPressBets } from './autopress.ts'
 import type { HoleResult, AutoPressBet } from './autopress.ts'
 import type { Format, MatchState, PlayerId, Scores, ScoringMode } from './types.ts'
 
+/** Canonical seed / offline fallback. The DB (via /api/course) is the editable source. */
 export const COURSE = DELHI_LODHI_BLUE
+
+/** The course this game is played on — its own snapshot, or the fallback constant. */
+export const courseOf = (g: Game): CourseMeta => g.course ?? COURSE
 
 export interface GamePlayer {
   id: PlayerId
@@ -29,6 +34,8 @@ export interface Game {
   /** rupees per Auto Press match (each digit is one bet at this stake) */
   stake: number
   scores: Scores
+  /** course snapshot for this round (par/SI/yards/tips), fetched from the DB at setup */
+  course?: CourseMeta
   /** total-only mode: manually entered winnings per player (₹, may be ±) */
   money?: Record<PlayerId, number>
 }
@@ -42,7 +49,7 @@ export const playerName = (g: Game, id: PlayerId): string =>
 /** Strokes a given player receives on a given hole. */
 export function holeStrokes(g: Game, id: PlayerId, holeN: number): number {
   const p = g.players.find((x) => x.id === id)
-  const hole = COURSE.holes[holeN - 1]
+  const hole = courseOf(g).holes[holeN - 1]
   if (!p || !hole) return 0
   return strokesOnHole(p.strokes, hole.si)
 }
@@ -58,6 +65,7 @@ export interface LiveMatch {
 /** All match-play matches for the game (fourball and/or singles), live. */
 export function liveMatches(g: Game): LiveMatch[] {
   const sById = strokesById(g)
+  const holes = courseOf(g).holes
   const out: LiveMatch[] = []
   const fourball = g.teamA.length === 2 && g.teamB.length === 2
   if (fourball) {
@@ -65,14 +73,14 @@ export function liveMatches(g: Game): LiveMatch[] {
       kind: 'fourball',
       label: `${g.teamA.map((i) => playerName(g, i)).join(' & ')} v ${g.teamB.map((i) => playerName(g, i)).join(' & ')}`,
       a: g.teamA, b: g.teamB,
-      state: computeMatch(g.scores, COURSE.holes, sById, g.teamA, g.teamB),
+      state: computeMatch(g.scores, holes, sById, g.teamA, g.teamB),
     })
     for (const [pa, pb] of g.singles) {
       out.push({
         kind: 'singles',
         label: `${playerName(g, pa)} v ${playerName(g, pb)}`,
         a: [pa], b: [pb],
-        state: computeMatch(g.scores, COURSE.holes, sById, [pa], [pb]),
+        state: computeMatch(g.scores, holes, sById, [pa], [pb]),
       })
     }
   } else {
@@ -81,7 +89,7 @@ export function liveMatches(g: Game): LiveMatch[] {
       kind: 'singles',
       label: `${playerName(g, g.teamA[0])} v ${playerName(g, g.teamB[0])}`,
       a: g.teamA, b: g.teamB,
-      state: computeMatch(g.scores, COURSE.holes, sById, g.teamA, g.teamB),
+      state: computeMatch(g.scores, holes, sById, g.teamA, g.teamB),
     })
   }
   return out
@@ -90,8 +98,9 @@ export function liveMatches(g: Game): LiveMatch[] {
 /** Per-hole better-ball net result of teamA vs teamB, for completed holes only. */
 export function holeResults(g: Game): HoleResult[] {
   const sById = strokesById(g)
+  const holes = courseOf(g).holes
   const sideNet = (side: PlayerId[], holeN: number): number | null => {
-    const hole = COURSE.holes[holeN - 1]
+    const hole = holes[holeN - 1]
     const nets: number[] = []
     for (const p of side) {
       const gross = g.scores[holeN]?.[p]
