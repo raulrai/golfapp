@@ -101,6 +101,7 @@ function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: ()
   const [detail, setDetail] = useState<RoundDetail | null>(null)
   const [rows, setRows] = useState<EditRow[]>([])
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -144,6 +145,19 @@ function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: ()
     }
   }
 
+  const del = async () => {
+    if (!confirm('Delete this round? Everyone’s scores and winnings for it will be removed and handicaps recalculated. This cannot be undone.')) return
+    setDeleting(true); setErr('')
+    try {
+      const res = await fetch(`/api/rounds/${roundId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('delete failed')
+      onSaved()
+    } catch {
+      setErr('Delete failed — please try again')
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="sheet-bg" onClick={onClose}>
       <div className="sheet" onClick={e => e.stopPropagation()}>
@@ -182,10 +196,13 @@ function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: ()
               Money balance: {moneyBalance === 0 ? 'level ✓' : `${moneyBalance > 0 ? '+' : '−'}₹${Math.abs(moneyBalance).toLocaleString('en-IN')} (should net to zero)`}
             </div>
             {err && <div className="pot-line off">{err}</div>}
-            <button className="primary" disabled={!valid || saving} onClick={save}>
+            <button className="primary" disabled={!valid || saving || deleting} onClick={save}>
               {saving ? 'Saving…' : 'Save changes'}
             </button>
-            <button className="flat" onClick={onClose}>Cancel</button>
+            <button className="danger" disabled={saving || deleting} onClick={del}>
+              {deleting ? 'Deleting…' : 'Delete round'}
+            </button>
+            <button className="flat" disabled={saving || deleting} onClick={onClose}>Cancel</button>
           </>
         )}
       </div>

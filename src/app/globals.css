@@ -147,4 +147,9 @@ body {
   justify-content: center; font-weight: 800;
 }
 .sheet button.primary:disabled { opacity: .45; cursor: not-allowed; }
+.sheet button.danger {
+  justify-content: center; background: transparent;
+  border-color: var(--neg); color: var(--neg); font-weight: 700;
+}
+.sheet button.danger:disabled { opacity: .45; cursor: not-allowed; }
 .sheet button.flat { justify-content: center; color: var(--muted); }

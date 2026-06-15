@@ -22,3 +22,13 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   return NextResponse.json({ ...round, players, scores })
 }
+
+export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+
+  // scores, round_players and hole_scores all cascade on round_id.
+  const deleted = await sql`DELETE FROM rounds WHERE id = ${Number(id)} RETURNING id`
+  if (deleted.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  return NextResponse.json({ deleted: Number(id) })
+}
