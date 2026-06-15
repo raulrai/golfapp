@@ -26,6 +26,8 @@ export interface Game {
   players: GamePlayer[]
   scoringMode: ScoringMode
   format: Format
+  /** handicap allowance % of the difference to the field low marker (e.g. 75, 90, 100) */
+  allowancePct: number
   /** the two sides — one player each (singles) or two (fourball) */
   teamA: PlayerId[]
   teamB: PlayerId[]

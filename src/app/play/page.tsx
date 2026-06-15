@@ -6,7 +6,7 @@ import {
 } from '@/lib/golf/game'
 import type { Game, GamePlayer } from '@/lib/golf/game'
 import type { CourseMeta } from '@/lib/golf/course'
-import { fieldStrokes } from '@/lib/golf/strokes'
+import { fieldStrokes, strokesOnHole } from '@/lib/golf/strokes'
 import type { Format, PlayerId, ScoringMode } from '@/lib/golf/types'
 
 type RosterPlayer = { id: number; name: string; handicap: number }
@@ -52,6 +52,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
   const [roster, setRoster] = useState<RosterPlayer[]>([])
   const [count, setCount] = useState<2 | 4 | null>(null)
   const [picked, setPicked] = useState<number[]>([])
+  const [allowancePct, setAllowancePct] = useState(75)
   const [mode, setMode] = useState<ScoringMode | null>(null)
   const [format, setFormat] = useState<Format | null>(null)
   const [teamA, setTeamA] = useState<number[]>([])
@@ -98,7 +99,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
   const start = () => {
     if (!ready || count === null) return
     const chosen = picked.map((id) => roster.find((r) => r.id === id)!).filter(Boolean)
-    const strokes = fieldStrokes(chosen, 75)
+    const strokes = fieldStrokes(chosen, allowancePct)
     const players: GamePlayer[] = chosen.map((p, i) => ({
       id: p.id, name: p.name, handicap: p.handicap, strokes: strokes[i],
     }))
@@ -119,6 +120,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
       createdAt: Date.now(),
       players,
       scoringMode: mode!,
+      allowancePct,
       format: needFormat ? format! : 'match',
       teamA: a, teamB: b, singles,
       stake,
@@ -158,6 +160,38 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
         <div className="setup-step">
           <div className="setup-label">Course</div>
           <div className="team-col"><div className="slot filled">{course.name} · {course.tees}</div></div>
+        </div>
+      )}
+
+      {count && picked.length === count && (
+        <div className="setup-step">
+          <div className="setup-label">Handicap allowance · {allowancePct}% of the difference</div>
+          <input
+            className="hcp-slider"
+            type="range"
+            min={50}
+            max={100}
+            step={5}
+            value={allowancePct}
+            onChange={(e) => setAllowancePct(Number(e.target.value))}
+          />
+          <div className="hcp-ticks">
+            <span>50%</span><span>75%</span><span>100%</span>
+          </div>
+          <div className="hcp-note">
+            Full difference is 100%. Match play commonly plays off 75–90% to keep it fair.
+          </div>
+        </div>
+      )}
+
+      {count && picked.length === count && (
+        <div className="setup-step">
+          <div className="setup-label">Stroking · who gets shots</div>
+          <StrokePreview
+            players={picked.map((id) => roster.find((r) => r.id === id)!).filter(Boolean)}
+            course={course}
+            allowancePct={allowancePct}
+          />
         </div>
       )}
 
@@ -228,6 +262,52 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
 }
 
 const playerNameFrom = (roster: RosterPlayer[], id: number) => roster.find((r) => r.id === id)?.name ?? '?'
+
+/* Per-player stroke summary shown before format is chosen. */
+function StrokePreview({
+  players, course, allowancePct,
+}: {
+  players: RosterPlayer[]; course: CourseMeta; allowancePct: number
+}) {
+  if (players.length === 0) return null
+  const strokes = fieldStrokes(players, allowancePct)
+  // holes ordered by stroke index (hardest first) — that's where shots land
+  const bySi = [...course.holes].sort((a, b) => a.si - b.si)
+
+  const rows = players
+    .map((p, i) => ({ p, total: strokes[i] }))
+    .sort((a, b) => a.total - b.total)
+
+  return (
+    <div className="stroke-preview">
+      {rows.map(({ p, total }) => {
+        // hole numbers receiving 1 stroke and (separately) those getting 2
+        const ones = bySi.filter((h) => strokesOnHole(total, h.si) === 1).map((h) => h.n)
+        const twos = bySi.filter((h) => strokesOnHole(total, h.si) >= 2).map((h) => h.n)
+        return (
+          <div className="stroke-row" key={p.id}>
+            <div className="stroke-top">
+              <span className="pname">{p.name}</span>
+              <span className="stroke-count">
+                {total === 0 ? 'scratch' : `${total} stroke${total > 1 ? 's' : ''}`}
+              </span>
+            </div>
+            <div className="stroke-where">
+              {total === 0
+                ? 'plays off the low marker — gives shots to the field'
+                : (
+                  <>
+                    {twos.length > 0 && <>2 on holes <b>{twos.join(', ')}</b>{ones.length > 0 ? ' · ' : ''}</>}
+                    {ones.length > 0 && <>1 on holes <b>{ones.join(', ')}</b></>}
+                  </>
+                )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 /* ───────────────────────── Scoring ───────────────────────── */
 
@@ -424,7 +504,7 @@ async function saveRound(game: Game): Promise<{ ok: boolean; error?: string }> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       scoringMode: game.scoringMode,
-      handicap_pct: 75,
+      handicap_pct: game.allowancePct,
       players: game.players.map((p) => ({ id: p.id, strokes: p.strokes })),
       scores: game.scores,
       money,
