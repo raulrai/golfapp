@@ -1,11 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import './play.css'
 import {
   COURSE, courseOf, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName, effectiveMoney,
 } from '@/lib/golf/game'
 import type { Game, GamePlayer } from '@/lib/golf/game'
-import type { CourseMeta } from '@/lib/golf/course'
+import type { CourseMeta, TeeColor, Hole } from '@/lib/golf/course'
+import { TEES, DEFAULT_TEE, teeInfo, withTee } from '@/lib/golf/course'
 import { fieldStrokes, strokesOnHole } from '@/lib/golf/strokes'
 import type { Format, PlayerId, ScoringMode } from '@/lib/golf/types'
 
@@ -37,7 +39,7 @@ export default function PlayPage() {
       <header className="play-head">
         <div className="crest">⛳ Delhi Golf Club ⛳</div>
         <h1 className="serif">The Round</h1>
-        <div className="sub">{course.short} · {course.tees}</div>
+        <div className="sub">{course.short} · {(game ? courseOf(game) : course).tees}</div>
       </header>
       {game
         ? <Scoring game={game} onChange={update} />
@@ -52,11 +54,12 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
   const [roster, setRoster] = useState<RosterPlayer[]>([])
   const [count, setCount] = useState<2 | 4 | null>(null)
   const [picked, setPicked] = useState<number[]>([])
+  const [tee, setTee] = useState<TeeColor>(DEFAULT_TEE)
   const [allowancePct, setAllowancePct] = useState(75)
   const [mode, setMode] = useState<ScoringMode | null>(null)
   const [format, setFormat] = useState<Format | null>(null)
   const [teamA, setTeamA] = useState<number[]>([])
-  const [stake, setStake] = useState(100)
+  const [stake, setStake] = useState(200)
 
   useEffect(() => {
     fetch('/api/players')
@@ -125,7 +128,8 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
       teamA: a, teamB: b, singles,
       stake,
       scores: {},
-      course,
+      course: withTee(course, tee),
+      tee,
     })
   }
 
@@ -159,7 +163,31 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
       {count && picked.length === count && (
         <div className="setup-step">
           <div className="setup-label">Course</div>
-          <div className="team-col"><div className="slot filled">{course.name} · {course.tees}</div></div>
+          <div className="team-col"><div className="slot filled">{course.name}</div></div>
+        </div>
+      )}
+
+      {count && picked.length === count && (
+        <div className="setup-step">
+          <div className="setup-label">Tees · play from</div>
+          <div className="seg cols-3">
+            {TEES.map((t) => (
+              <button
+                key={t.color}
+                className={`tee-btn tee-${t.color.toLowerCase()} ${tee === t.color ? 'on' : ''}`}
+                onClick={() => setTee(t.color)}
+              >
+                <span className="tee-dot" aria-hidden />
+                {t.color}
+                <span className="lbl-sub">{t.rating} / {t.slope}</span>
+              </button>
+            ))}
+          </div>
+          {teeInfo(tee).provisional && (
+            <div className="hcp-note">
+              {tee} rating/slope are provisional and share Blue&apos;s yardages until measured.
+            </div>
+          )}
         </div>
       )}
 
@@ -219,8 +247,8 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
       {mode === 'hole' && (format === 'autopress' || format === 'both') && (
         <div className="setup-step">
           <div className="setup-label">Stake · ₹ per Auto Press match</div>
-          <div className="seg cols-4">
-            {[50, 100, 200, 500].map((v) => (
+          <div className="seg cols-3">
+            {[200, 300, 500].map((v) => (
               <button key={v} className={stake === v ? 'on' : ''} onClick={() => setStake(v)}>₹{v}</button>
             ))}
           </div>
@@ -321,6 +349,7 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
     return 18
   }
   const [hole, setHole] = useState(firstIncomplete)
+  const [view, setView] = useState<'play' | 'card'>('play')
 
   if (game.scoringMode === 'total') return <TotalEntry game={game} onChange={onChange} />
 
@@ -346,34 +375,45 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
 
   return (
     <div>
-      <div className="hole-head">
-        <span className="course-chip">{course.short}</span>
-        <div className="hole-num-row">
-          <button className="hole-nav-btn" disabled={hole === 1} onClick={() => setHole(hole - 1)}>‹</button>
-          <div>
-            <div className="hole-num serif">{hole}</div>
-            <div className="hole-meta">Par <b>{info.par}</b> · {info.yards} yds · SI <b>{info.si}</b></div>
+      <div className="seg view-toggle">
+        <button className={view === 'play' ? 'on' : ''} onClick={() => setView('play')}>Play</button>
+        <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>Scorecard</button>
+      </div>
+
+      {view === 'card' ? (
+        <Scorecard game={game} />
+      ) : (
+        <>
+          <div className="hole-head">
+            <span className="course-chip">{course.short} · {course.tees}</span>
+            <div className="hole-num-row">
+              <button className="hole-nav-btn" disabled={hole === 1} onClick={() => setHole(hole - 1)}>‹</button>
+              <div>
+                <div className="hole-num serif">{hole}</div>
+                <div className="hole-meta">Par <b>{info.par}</b> · {info.yards} yds · SI <b>{info.si}</b></div>
+              </div>
+              <button className="hole-nav-btn" disabled={hole === 18} onClick={() => setHole(hole + 1)}>›</button>
+            </div>
           </div>
-          <button className="hole-nav-btn" disabled={hole === 18} onClick={() => setHole(hole + 1)}>›</button>
-        </div>
-      </div>
 
-      <div className="tam-tip">
-        <span className="tam-label">Caddie says</span>
-        {info.tip}
-      </div>
+          <div className="tam-tip">
+            <span className="tam-label">Caddie says</span>
+            {info.tip}
+          </div>
 
-      {game.players.map((p) => (
-        <ScoreRow
-          key={p.id}
-          game={game}
-          player={p}
-          hole={hole}
-          par={info.par}
-          value={game.scores[hole]?.[p.id]}
-          onSet={(s) => setScore(p.id, s)}
-        />
-      ))}
+          {game.players.map((p) => (
+            <ScoreRow
+              key={p.id}
+              game={game}
+              player={p}
+              hole={hole}
+              par={info.par}
+              value={game.scores[hole]?.[p.id]}
+              onSet={(s) => setScore(p.id, s)}
+            />
+          ))}
+        </>
+      )}
 
       <div style={{ display: 'flex', gap: 8, margin: '14px 0' }}>
         <button className="cta ghost" style={{ flex: 1 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>
@@ -413,7 +453,9 @@ function ScoreRow({
       <div className="prow">
         <div>
           <span className="pname">{player.name}</span>
-          {strokes > 0 && <span className="pstroke">{'•'.repeat(strokes)} stroke{strokes > 1 ? 's' : ''}</span>}
+          {strokes > 0 && (
+            <span className="pstroke">{'●'.repeat(strokes)} {strokes} stroke{strokes > 1 ? 's' : ''} here</span>
+          )}
         </div>
         <span className="ptotal">
           {n > 0 ? `${gross} gross · net ${net === 0 ? 'E' : net > 0 ? '+' + net : net} · ${n}h` : '—'}
@@ -436,6 +478,83 @@ function ScoreRow({
         </button>
       </div>
     </div>
+  )
+}
+
+/* Filled-out scorecard: front nine + back nine, gross coloured vs par. */
+function Scorecard({ game }: { game: Game }) {
+  const holes = courseOf(game).holes
+  return (
+    <div className="scorecard">
+      <NineTable game={game} holes={holes.slice(0, 9)} label="OUT" />
+      <NineTable game={game} holes={holes.slice(9, 18)} label="IN" grand />
+      <div className="sc-legend">
+        <span><i className="sc-key sc-eagle" />Eagle−</span>
+        <span><i className="sc-key sc-birdie" />Birdie</span>
+        <span><i className="sc-key sc-bogey" />Bogey</span>
+        <span><i className="sc-key sc-dbl" />Dbl+</span>
+      </div>
+    </div>
+  )
+}
+
+const relClass = (rel: number) =>
+  rel <= -2 ? 'sc-eagle' : rel === -1 ? 'sc-birdie' : rel === 0 ? 'sc-par' : rel === 1 ? 'sc-bogey' : 'sc-dbl'
+
+function NineTable({ game, holes, label, grand }: {
+  game: Game; holes: Hole[]; label: 'OUT' | 'IN'; grand?: boolean
+}) {
+  const allHoles = courseOf(game).holes
+  const sumGross = (pid: PlayerId, hs: Hole[]) => {
+    let sum = 0, any = false
+    for (const h of hs) {
+      const s = game.scores[h.n]?.[pid]
+      if (typeof s === 'number') { sum += s; any = true }
+    }
+    return any ? sum : null
+  }
+  const parSub = holes.reduce((a, h) => a + h.par, 0)
+  const parAll = allHoles.reduce((a, h) => a + h.par, 0)
+
+  return (
+    <table className="sc-table">
+      <thead>
+        <tr>
+          <th className="sc-name">{label === 'OUT' ? 'Front' : 'Back'}</th>
+          {holes.map((h) => <th key={h.n}>{h.n}</th>)}
+          <th className="sc-sub">{label}</th>
+          {grand && <th className="sc-tot">Tot</th>}
+        </tr>
+        <tr className="sc-par-row">
+          <th className="sc-name">Par</th>
+          {holes.map((h) => <td key={h.n}>{h.par}</td>)}
+          <td className="sc-sub">{parSub}</td>
+          {grand && <td className="sc-tot">{parAll}</td>}
+        </tr>
+      </thead>
+      <tbody>
+        {game.players.map((p) => {
+          const nineTot = sumGross(p.id, holes)
+          const allTot = sumGross(p.id, allHoles)
+          return (
+            <tr key={p.id}>
+              <th className="sc-name">{p.name.split(' ')[0]}</th>
+              {holes.map((h) => {
+                const s = game.scores[h.n]?.[p.id]
+                const cls = typeof s === 'number' ? relClass(s - h.par) : ''
+                return (
+                  <td key={h.n} className={`sc-cell ${cls}`}>
+                    {typeof s === 'number' ? <span className="sc-val">{s}</span> : ''}
+                  </td>
+                )
+              })}
+              <td className="sc-sub">{nineTot ?? '–'}</td>
+              {grand && <td className="sc-tot">{allTot ?? '–'}</td>}
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
@@ -518,6 +637,7 @@ async function saveRound(game: Game): Promise<{ ok: boolean; error?: string }> {
 }
 
 function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null) => void }) {
+  const router = useRouter()
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [err, setErr] = useState('')
   const money = effectiveMoney(game)
@@ -527,8 +647,11 @@ function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null
   const save = async () => {
     setStatus('saving')
     const r = await saveRound(game)
-    if (r.ok) setStatus('saved')
-    else { setStatus('error'); setErr(r.error ?? '') }
+    if (r.ok) {
+      setStatus('saved')
+      saveGame(null)      // clear the active round from storage
+      router.push('/')    // back to the home screen
+    } else { setStatus('error'); setErr(r.error ?? '') }
   }
 
   return (

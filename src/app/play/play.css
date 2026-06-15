@@ -61,6 +61,14 @@
 .seg .lbl-sub { display: block; font-size: 10px; color: var(--muted); margin-top: 3px; letter-spacing: .5px; text-transform: uppercase; }
 .seg button.on .lbl-sub { color: #5a4a1e; }
 
+.tee-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.tee-btn .tee-dot {
+  width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, .25);
+}
+.tee-black .tee-dot { background: #1a1a1a; }
+.tee-blue .tee-dot { background: #2e5fb0; }
+.tee-red .tee-dot { background: #c0392b; }
+
 .roster { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .roster button { display: flex; justify-content: space-between; align-items: center; }
 .roster button .hcp { font-size: 11px; color: var(--muted); font-weight: 700; }
@@ -111,7 +119,12 @@
 .prow { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
 .pname { font-size: 16px; font-weight: 700; color: var(--ink); }
 .pteam { font-size: 11px; color: var(--gold); margin-left: 7px; letter-spacing: 1px; }
-.pstroke { font-size: 10px; color: var(--muted); margin-left: 6px; }
+.pstroke {
+  display: inline-block; margin-left: 8px; vertical-align: middle;
+  font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--gold); background: rgba(217, 178, 90, .14);
+  border: 1px solid var(--gold-dim); border-radius: 999px; padding: 2px 8px;
+}
 .ptotal { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 .chips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
@@ -234,3 +247,52 @@
   font-variant-numeric: tabular-nums;
 }
 .stroke-where b { color: var(--ink); }
+
+/* ---- view toggle (Play / Scorecard) ---- */
+.view-toggle { margin-bottom: 14px; }
+
+/* ---- filled scorecard ---- */
+.scorecard { margin-bottom: 6px; }
+.sc-table {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+  margin-bottom: 14px; font-variant-numeric: tabular-nums;
+}
+.sc-table th, .sc-table td {
+  border: 1px solid var(--line); text-align: center; padding: 5px 0;
+  font-size: 13px; color: var(--ink); height: 30px;
+}
+.sc-table thead th { color: var(--gold); font-weight: 700; font-size: 11px; }
+.sc-par-row td, .sc-par-row th {
+  color: var(--muted); font-size: 11px; font-weight: 600;
+  background: rgba(0, 0, 0, .14);
+}
+.sc-table .sc-name {
+  text-align: left; padding-left: 8px; width: 52px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.sc-table thead .sc-name { color: var(--gold); }
+.sc-sub, .sc-tot {
+  width: 30px; font-weight: 700; background: rgba(0, 0, 0, .14);
+}
+.sc-tot { color: var(--gold); }
+.sc-cell { position: relative; padding: 3px 0; }
+.sc-val {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; line-height: 1;
+}
+.sc-birdie .sc-val { border: 1.5px solid var(--gold); border-radius: 50%; }
+.sc-eagle .sc-val {
+  border: 1.5px solid var(--gold); border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--gold-dim);
+}
+.sc-bogey { background: rgba(150, 70, 45, .28); }
+.sc-dbl { background: rgba(165, 45, 35, .45); }
+
+.sc-legend {
+  display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+  color: var(--muted); font-size: 11px; margin-top: 2px;
+}
+.sc-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sc-key { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
+.sc-key.sc-birdie { border: 1.5px solid var(--gold); border-radius: 50%; background: transparent; }
+.sc-key.sc-eagle { border: 1.5px solid var(--gold); border-radius: 50%; box-shadow: 0 0 0 1.5px var(--gold-dim); background: transparent; }

@@ -1,5 +1,5 @@
 import { DELHI_LODHI_BLUE } from './course.ts'
-import type { CourseMeta } from './course.ts'
+import type { CourseMeta, TeeColor } from './course.ts'
 import { computeMatch } from './matchplay.ts'
 import { strokesOnHole } from './strokes.ts'
 import { autoPressBets } from './autopress.ts'
@@ -38,6 +38,8 @@ export interface Game {
   scores: Scores
   /** course snapshot for this round (par/SI/yards/tips), fetched from the DB at setup */
   course?: CourseMeta
+  /** tee box this round is played from (course snapshot reflects its label/rating/slope) */
+  tee?: TeeColor
   /** total-only mode: manually entered winnings per player (₹, may be ±) */
   money?: Record<PlayerId, number>
 }

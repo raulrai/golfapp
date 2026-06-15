@@ -23,6 +23,37 @@ export interface CourseMeta {
 
 const h = (n: number, par: number, si: number, yards: number, tip: string): Hole => ({ n, par, si, yards, tip })
 
+export type TeeColor = 'Black' | 'Blue' | 'Red'
+
+export interface TeeInfo {
+  color: TeeColor
+  /** short display label, e.g. 'Blue · 6,460 yds' */
+  label: string
+  rating: number
+  slope: number
+  /** true until this tee's real yardages / rating / slope are measured */
+  provisional?: boolean
+}
+
+// Blue is the only measured tee. Red & Black ratings/slopes are placeholders and
+// currently share Blue's per-hole yardages — swap in real numbers once measured.
+export const TEES: TeeInfo[] = [
+  { color: 'Black', label: 'Black · championship', rating: 73.0, slope: 135, provisional: true },
+  { color: 'Blue', label: 'Blue · 6,460 yds', rating: 70.6, slope: 129 },
+  { color: 'Red', label: 'Red · forward', rating: 68.0, slope: 120, provisional: true },
+]
+
+export const DEFAULT_TEE: TeeColor = 'Blue'
+
+export const teeInfo = (color: TeeColor): TeeInfo =>
+  TEES.find((t) => t.color === color) ?? TEES.find((t) => t.color === DEFAULT_TEE)!
+
+/** A course meta resolved for a chosen tee (label + rating + slope from that tee). */
+export function withTee(base: CourseMeta, color: TeeColor): CourseMeta {
+  const tee = teeInfo(color)
+  return { ...base, tees: tee.label, rating: tee.rating, slope: tee.slope }
+}
+
 export const DELHI_LODHI_BLUE: CourseMeta = {
   name: 'Delhi Golf Club — Lodhi Course',
   short: 'DGC Lodhi',
