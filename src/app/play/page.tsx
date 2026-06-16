@@ -713,11 +713,14 @@ function TotalEntry({ game, onChange }: { game: Game; onChange: (g: Game | null)
       ))}
 
       <div className={`pot-balance ${balance === 0 ? 'level' : 'off'}`}>
-        Pot balance: {balance === 0 ? 'level ✓' : `${balance > 0 ? '+' : '−'}₹${Math.abs(balance).toLocaleString('en-IN')} — must net to zero before saving`}
+        Pot balance: {balance === 0 ? 'level ✓' : `${balance > 0 ? '+' : '−'}₹${Math.abs(balance).toLocaleString('en-IN')} — winnings don't net to zero (you can still save)`}
       </div>
 
-      {allIn && balance === 0 ? (
-        <SaveSection game={game} onChange={onChange} />
+      {allIn ? (
+        <>
+          <SaveSection game={game} onChange={onChange} />
+          <button className="cta ghost" style={{ marginTop: 10 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>End Round</button>
+        </>
       ) : (
         <button className="cta ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>End Round</button>
       )}
