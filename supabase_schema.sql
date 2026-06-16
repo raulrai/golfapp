@@ -1,4 +1,5 @@
--- Run this in Supabase SQL Editor before seeding
+-- Run this in Supabase SQL Editor before seeding.
+-- Mirrors the live database schema.
 
 CREATE TABLE IF NOT EXISTS players (
   id BIGSERIAL PRIMARY KEY,
@@ -11,7 +12,21 @@ CREATE TABLE IF NOT EXISTS courses (
   name TEXT NOT NULL,
   course_rating REAL NOT NULL,
   slope_rating REAL NOT NULL,
-  is_default BOOLEAN DEFAULT FALSE
+  is_default BOOLEAN DEFAULT FALSE,
+  short TEXT,
+  tees TEXT,
+  par SMALLINT
+);
+
+CREATE TABLE IF NOT EXISTS holes (
+  id BIGSERIAL PRIMARY KEY,
+  course_id BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  hole SMALLINT NOT NULL,
+  par SMALLINT NOT NULL,
+  stroke_index SMALLINT NOT NULL,
+  yards INTEGER,
+  tip TEXT,
+  UNIQUE (course_id, hole)
 );
 
 CREATE TABLE IF NOT EXISTS rounds (
@@ -19,7 +34,11 @@ CREATE TABLE IF NOT EXISTS rounds (
   date DATE NOT NULL,
   course_id BIGINT REFERENCES courses(id),
   handicap_pct REAL DEFAULT 75,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  format TEXT,
+  stake INTEGER,
+  team_a BIGINT[],
+  team_b BIGINT[]
 );
 
 CREATE TABLE IF NOT EXISTS round_players (
@@ -38,4 +57,13 @@ CREATE TABLE IF NOT EXISTS scores (
   money_inr INTEGER DEFAULT 0,
   played_at DATE NOT NULL,
   entered_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hole_scores (
+  id BIGSERIAL PRIMARY KEY,
+  round_id BIGINT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+  player_id BIGINT NOT NULL REFERENCES players(id),
+  hole SMALLINT NOT NULL,
+  strokes SMALLINT NOT NULL,
+  UNIQUE (round_id, player_id, hole)
 );
