@@ -153,3 +153,73 @@ body {
 }
 .sheet button.danger:disabled { opacity: .45; cursor: not-allowed; }
 .sheet button.flat { justify-content: center; color: var(--muted); }
+
+/* ---- filled scorecard (shared by Play + History) ---- */
+.scorecard { margin-bottom: 6px; }
+.sc-table {
+  width: 100%; border-collapse: collapse; table-layout: fixed;
+  margin-bottom: 14px; font-variant-numeric: tabular-nums;
+}
+.sc-table th, .sc-table td {
+  border: 1px solid var(--line); text-align: center; padding: 5px 0;
+  font-size: 13px; color: var(--ink); height: 30px;
+}
+.sc-table thead th { color: var(--gold); font-weight: 700; font-size: 11px; }
+.sc-par-row td, .sc-par-row th {
+  color: var(--muted); font-size: 11px; font-weight: 600;
+  background: rgba(0, 0, 0, .14);
+}
+.sc-table .sc-name {
+  text-align: left; padding-left: 8px; width: 52px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.sc-table thead .sc-name { color: var(--gold); }
+.sc-sub, .sc-tot {
+  width: 30px; font-weight: 700; background: rgba(0, 0, 0, .14);
+}
+.sc-tot { color: var(--gold); }
+.sc-cell { position: relative; padding: 3px 0; }
+.sc-val {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; line-height: 1;
+}
+.sc-birdie .sc-val { border: 1.5px solid var(--gold); border-radius: 50%; }
+.sc-eagle .sc-val {
+  border: 1.5px solid var(--gold); border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--gold-dim);
+}
+.sc-bogey { background: rgba(150, 70, 45, .28); }
+.sc-dbl { background: rgba(165, 45, 35, .45); }
+
+.sc-legend {
+  display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+  color: var(--muted); font-size: 11px; margin-top: 2px;
+}
+.sc-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sc-key { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
+.sc-key.sc-birdie { border: 1.5px solid var(--gold); border-radius: 50%; background: transparent; }
+.sc-key.sc-eagle { border: 1.5px solid var(--gold); border-radius: 50%; box-shadow: 0 0 0 1.5px var(--gold-dim); background: transparent; }
+
+/* ---- round result blocks (History scorecard sheet) ---- */
+.result-block { margin: 4px 0 16px; }
+.result-block h3 {
+  font-size: 11px; color: var(--gold); letter-spacing: 1.5px; text-transform: uppercase;
+  font-weight: 600; margin-bottom: 8px;
+}
+.result-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--line);
+}
+.result-row:last-child { border-bottom: none; }
+.result-who { font-size: 14px; color: var(--ink); font-weight: 600; }
+.result-kind { font-size: 11px; color: var(--muted); display: block; font-weight: 500; letter-spacing: .3px; }
+.result-val { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.result-val.as { color: var(--muted); }
+.result-val.up-a { color: var(--pos); }
+.result-val.up-b { color: var(--neg); }
+.result-note { color: var(--muted); font-size: 12px; text-align: center; padding: 6px 0; }
+.view-btn {
+  flex-shrink: 0; background: var(--board); border: 1px solid var(--line); border-radius: 9px;
+  color: var(--ink); font-size: 12px; font-weight: 700; letter-spacing: .5px;
+  padding: 8px 13px; cursor: pointer; font-family: inherit;
+}
