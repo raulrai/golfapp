@@ -13,6 +13,11 @@ interface SaveBody {
   date?: string
   scoringMode: 'hole' | 'total'
   handicap_pct?: number
+  /** betting context, persisted so History can recompute match play + Auto Press */
+  format?: 'match' | 'autopress' | 'both'
+  stake?: number
+  teamA?: number[]
+  teamB?: number[]
   players: SavePlayer[]
   scores: Scores
   money?: Record<number, number>
@@ -36,6 +41,11 @@ function adjustedGross(scores: Scores, pid: number, mode: 'hole' | 'total'): num
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as SaveBody
   const { scoringMode, players, scores, money = {}, handicap_pct = 75 } = body
+  // Only hole-by-hole rounds carry a recomputable match; total-only rounds don't.
+  const format = scoringMode === 'hole' ? (body.format ?? null) : null
+  const stake = scoringMode === 'hole' ? (body.stake ?? null) : null
+  const teamA = scoringMode === 'hole' ? (body.teamA ?? null) : null
+  const teamB = scoringMode === 'hole' ? (body.teamB ?? null) : null
   const date = body.date ?? new Date().toISOString().split('T')[0]
 
   const [course] = await sql`SELECT * FROM courses WHERE is_default = true LIMIT 1`
@@ -52,8 +62,9 @@ export async function POST(req: NextRequest) {
   }
 
   const [round] = await sql`
-    INSERT INTO rounds (date, course_id, handicap_pct)
-    VALUES (${date}, ${course.id}, ${handicap_pct})
+    INSERT INTO rounds (date, course_id, handicap_pct, format, stake, team_a, team_b)
+    VALUES (${date}, ${course.id}, ${handicap_pct}, ${format}, ${stake},
+            ${teamA as number[] | null}, ${teamB as number[] | null})
     RETURNING id`
 
   for (const { p, gross } of grosses) {

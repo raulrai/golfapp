@@ -20,7 +20,20 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     FROM scores s JOIN players p ON s.player_id = p.id
     WHERE s.round_id = ${round.id}`
 
-  return NextResponse.json({ ...round, players, scores })
+  // Per-hole gross strokes (present only for hole-by-hole rounds) — needed to
+  // redraw the scorecard and recompute match play / Auto Press.
+  const holeScores = await sql`
+    SELECT player_id, hole, strokes
+    FROM hole_scores WHERE round_id = ${round.id} ORDER BY hole`
+
+  // The course holes (par + stroke index) the round was played on.
+  const holes = round.course_id
+    ? await sql`
+        SELECT hole, par, stroke_index, yards
+        FROM holes WHERE course_id = ${round.course_id} ORDER BY hole`
+    : []
+
+  return NextResponse.json({ ...round, players, scores, holeScores, holes })
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
