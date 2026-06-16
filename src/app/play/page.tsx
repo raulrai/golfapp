@@ -364,6 +364,18 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
   const course = courseOf(game)
   const info = course.holes[hole - 1]
 
+  // Group entry rows by team — teamA on top, then teamB — so partners sit
+  // together. Falls back to selection order when there are no teams.
+  const orderedPlayers: GamePlayer[] = (() => {
+    if (game.teamA.length === 0 || game.teamB.length === 0) return game.players
+    const teamOrder = [...game.teamA, ...game.teamB]
+    const byTeam = teamOrder
+      .map((id) => game.players.find((p) => p.id === id))
+      .filter((p): p is GamePlayer => !!p)
+    const rest = game.players.filter((p) => !teamOrder.includes(p.id))
+    return [...byTeam, ...rest]
+  })()
+
   const setScore = (pid: PlayerId, score: number | null) => {
     const scores = { ...game.scores, [hole]: { ...game.scores[hole] } }
     if (score === null) delete scores[hole][pid]
@@ -402,7 +414,7 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
             {info.tip}
           </div>
 
-          {game.players.map((p) => (
+          {orderedPlayers.map((p) => (
             <ScoreRow
               key={p.id}
               game={game}
@@ -665,16 +677,36 @@ function TotalEntry({ game, onChange }: { game: Game; onChange: (g: Game | null)
             </label>
             <label className="total-field">
               <span>Winnings ₹</span>
-              <input
-                className="total-input"
-                inputMode="numeric"
-                placeholder="± ₹"
-                value={game.money?.[p.id] ?? ''}
-                onChange={(e) => {
-                  const t = e.target.value.replace(/[^0-9-]/g, '')
-                  setMoney(p.id, t === '' || t === '-' ? null : Number(t))
-                }}
-              />
+              <div className="money-input-row">
+                <button
+                  type="button"
+                  className={`sign-toggle ${(game.money?.[p.id] ?? 0) < 0 ? 'neg' : 'pos'}`}
+                  aria-label="Toggle won / lost"
+                  onClick={() => {
+                    const cur = game.money?.[p.id]
+                    if (cur == null || cur === 0) return
+                    setMoney(p.id, -cur)
+                  }}
+                >
+                  {(game.money?.[p.id] ?? 0) < 0 ? '−' : '+'}
+                </button>
+                <input
+                  className="total-input"
+                  inputMode="numeric"
+                  placeholder="₹"
+                  value={game.money?.[p.id] != null ? Math.abs(game.money[p.id]!) : ''}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/[^0-9]/g, '')
+                    if (digits === '') {
+                      setMoney(p.id, null)
+                      return
+                    }
+                    const neg = (game.money?.[p.id] ?? 0) < 0
+                    const n = Number(digits)
+                    setMoney(p.id, neg ? -n : n)
+                  }}
+                />
+              </div>
             </label>
           </div>
         </div>

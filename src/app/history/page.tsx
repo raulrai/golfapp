@@ -260,10 +260,29 @@ function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: ()
                   </label>
                   <label className="edit-field">
                     <span>Money ₹</span>
-                    <input
-                      className="edit-input" inputMode="numeric" placeholder="±" value={r.money}
-                      onChange={e => setRow(r.player_id, 'money', e.target.value.replace(/[^0-9-]/g, ''))}
-                    />
+                    <div className="money-input-row">
+                      <button
+                        type="button"
+                        className={`sign-toggle ${r.money.startsWith('-') ? 'neg' : 'pos'}`}
+                        aria-label="Toggle won / lost"
+                        onClick={() => {
+                          const digits = r.money.replace(/[^0-9]/g, '')
+                          if (digits === '') return
+                          setRow(r.player_id, 'money', r.money.startsWith('-') ? digits : '-' + digits)
+                        }}
+                      >
+                        {r.money.startsWith('-') ? '−' : '+'}
+                      </button>
+                      <input
+                        className="edit-input" inputMode="numeric" placeholder="₹"
+                        value={r.money.replace('-', '')}
+                        onChange={e => {
+                          const digits = e.target.value.replace(/[^0-9]/g, '')
+                          const neg = r.money.startsWith('-')
+                          setRow(r.player_id, 'money', digits === '' ? '' : (neg ? '-' + digits : digits))
+                        }}
+                      />
+                    </div>
                   </label>
                 </div>
               </div>

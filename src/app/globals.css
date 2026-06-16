@@ -139,6 +139,16 @@ body {
   font-variant-numeric: tabular-nums; font-family: inherit;
 }
 .edit-input:focus { outline: none; border-color: var(--gold); }
+.money-input-row { display: flex; gap: 6px; align-items: stretch; }
+.money-input-row .edit-input { flex: 1; }
+.sign-toggle {
+  flex: 0 0 auto; width: 44px; font-size: 22px; font-weight: 700; line-height: 1;
+  border-radius: 10px; border: 1px solid var(--line); background: var(--board);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.sign-toggle.pos { color: var(--pos, #4caf50); border-color: rgba(76, 175, 80, 0.5); }
+.sign-toggle.neg { color: var(--neg, #e0573e); border-color: rgba(224, 87, 62, 0.5); }
+.sign-toggle:active { opacity: 0.7; }
 .pot-line { text-align: center; font-size: 12px; margin: 4px 0 14px; color: var(--muted); }
 .pot-line.ok { color: var(--pos); }
 .pot-line.off { color: var(--neg); }
