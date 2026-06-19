@@ -8,6 +8,7 @@ const NAV = [
   { href: '/handicaps', label: 'Handicaps', icon: '📊' },
   { href: '/leaderboard', label: 'Money', icon: '🏆' },
   { href: '/history', label: 'History', icon: '📋' },
+  { href: '/chat', label: 'Ask', icon: '💬' },
 ]
 
 export default function BottomNav() {
