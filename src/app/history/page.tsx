@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import BottomNav from '@/components/BottomNav'
 import Scorecard from '@/components/Scorecard'
 import { liveMatches, liveAutoPress, playerName } from '@/lib/golf/game'
+import { emojiForTag } from '@/lib/golf/moments'
 import type { Game, GamePlayer } from '@/lib/golf/game'
 import type { CourseMeta } from '@/lib/golf/course'
 import type { PlayerId, Scores } from '@/lib/golf/types'
@@ -29,9 +30,10 @@ type RoundFull = {
   team_a: (number | string)[] | null
   team_b: (number | string)[] | null
   players: { player_id: number | string; name: string; stroke_allowance: number | string }[]
-  scores: { player_id: number | string; player_name: string; adjusted_gross_score: number | null; money_inr: number }[]
+  scores: { player_id: number | string; player_name: string; adjusted_gross_score: number | null; money_inr: number; holes_played?: number | string | null }[]
   holeScores: { player_id: number | string; hole: number | string; strokes: number | string }[]
   holes: { hole: number | string; par: number | string; stroke_index: number | string; yards: number | string }[]
+  moments?: { hole: number | string | null; player_ids: (number | string)[] | null; tag: string; note: string | null; ts: string }[]
 }
 
 /** Rebuild a Game from a saved round so the live match-play / Auto Press engine can replay it. */
@@ -347,6 +349,17 @@ function ScorecardSheet({ roundId, onClose }: { roundId: number; onClose: () => 
               <div className="result-note">Total-only round — no hole-by-hole card was recorded.</div>
             )}
 
+            {(() => {
+              const partial = round.scores.filter((s) => s.holes_played != null && Number(s.holes_played) < 18)
+              if (partial.length === 0) return null
+              const min = Math.min(...partial.map((s) => Number(s.holes_played)))
+              return (
+                <div className="result-note">
+                  Ended early — scores pro-rated to 18 holes (from {min === Math.max(...partial.map((s) => Number(s.holes_played))) ? `${min} holes` : `${min}+ holes`}).
+                </div>
+              )
+            })()}
+
             {matches.length > 0 && (
               <div className="result-block">
                 <h3>Match Play</h3>
@@ -400,6 +413,27 @@ function ScorecardSheet({ roundId, onClose }: { roundId: number; onClose: () => 
 
             {hasCard && !hasTeams && (
               <div className="result-note">Match play / Auto Press weren&apos;t recorded for this round.</div>
+            )}
+
+            {(round.moments?.length ?? 0) > 0 && (
+              <div className="result-block">
+                <h3>Moments</h3>
+                {round.moments!.map((m, i) => {
+                  const who = (m.player_ids ?? [])
+                    .map((id) => round.players.find((p) => Number(p.player_id) === Number(id))?.name.split(' ')[0])
+                    .filter(Boolean)
+                  return (
+                    <div className="moment-item" key={i}>
+                      <span className="em">{emojiForTag(m.tag)}</span>
+                      <div className="body">
+                        <div className="head">{m.tag}{who.length > 0 ? ` — ${who.join(' & ')}` : ''}</div>
+                        <div className="meta">{m.hole != null ? `Hole ${m.hole}` : ''}</div>
+                        {m.note && <div className="note">“{m.note}”</div>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             )}
 
             <button className="flat" onClick={onClose}>Close</button>

@@ -16,7 +16,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     WHERE rp.round_id = ${round.id}`
 
   const scores = await sql`
-    SELECT s.player_id, p.name as player_name, s.adjusted_gross_score, s.handicap_score, s.money_inr
+    SELECT s.player_id, p.name as player_name, s.adjusted_gross_score, s.handicap_score, s.money_inr, s.holes_played
     FROM scores s JOIN players p ON s.player_id = p.id
     WHERE s.round_id = ${round.id}`
 
@@ -33,7 +33,12 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         FROM holes WHERE course_id = ${round.course_id} ORDER BY hole`
     : []
 
-  return NextResponse.json({ ...round, players, scores, holeScores, holes })
+  // The round's diary, newest-first.
+  const moments = await sql`
+    SELECT hole, player_ids, tag, note, ts
+    FROM round_moments WHERE round_id = ${round.id} ORDER BY ts DESC`
+
+  return NextResponse.json({ ...round, players, scores, holeScores, holes, moments })
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {

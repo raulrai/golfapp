@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS scores (
   adjusted_gross_score REAL,
   handicap_score REAL NOT NULL,
   money_inr INTEGER DEFAULT 0,
+  -- holes actually scored; < 18 means adjusted_gross_score is pro-rated to 18
+  holes_played SMALLINT DEFAULT 18,
   played_at DATE NOT NULL,
   entered_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -66,4 +68,15 @@ CREATE TABLE IF NOT EXISTS hole_scores (
   hole SMALLINT NOT NULL,
   strokes SMALLINT NOT NULL,
   UNIQUE (round_id, player_id, hole)
+);
+
+-- The round's diary: one-tap tagged moments captured during play (read-only on History).
+CREATE TABLE IF NOT EXISTS round_moments (
+  id BIGSERIAL PRIMARY KEY,
+  round_id BIGINT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+  hole SMALLINT,
+  player_ids BIGINT[],
+  tag TEXT NOT NULL,
+  note TEXT,
+  ts TIMESTAMPTZ DEFAULT NOW()
 );

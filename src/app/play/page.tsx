@@ -5,12 +5,17 @@ import './play.css'
 import {
   COURSE, courseOf, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName, effectiveMoney,
 } from '@/lib/golf/game'
-import type { Game, GamePlayer } from '@/lib/golf/game'
+import type { Game, GamePlayer, Moment } from '@/lib/golf/game'
 import type { CourseMeta, TeeColor } from '@/lib/golf/course'
 import Scorecard from '@/components/Scorecard'
+import PlayerCardSheet from '@/components/PlayerCardSheet'
+import MomentSheet from '@/components/MomentSheet'
+import { emojiForTag, isStoryTag } from '@/lib/golf/moments'
 import { TEES, DEFAULT_TEE, teeInfo, withTee } from '@/lib/golf/course'
 import { fieldStrokes, strokesOnHole } from '@/lib/golf/strokes'
 import type { Format, PlayerId, ScoringMode } from '@/lib/golf/types'
+
+const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
 type RosterPlayer = { id: number; name: string; handicap: number }
 
@@ -350,7 +355,10 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
     return 18
   }
   const [hole, setHole] = useState(firstIncomplete)
-  const [view, setView] = useState<'play' | 'card'>('play')
+  const [view, setView] = useState<'play' | 'card' | 'moments'>('play')
+  const [cardId, setCardId] = useState<PlayerId | null>(null)
+  const [showMoment, setShowMoment] = useState(false)
+  const [endOpen, setEndOpen] = useState(false)
 
   if (game.scoringMode === 'total') return <TotalEntry game={game} onChange={onChange} />
 
@@ -386,15 +394,30 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
     if (allIn && score !== null && hole < 18) setTimeout(() => setHole((h) => Math.min(18, h + 1)), 700)
   }
 
+  const addMoment = (who: PlayerId[], tag: string, note: string) => {
+    const m: Moment = { id: newId(), hole, players: who, tag, note: note || undefined, ts: Date.now() }
+    onChange({ ...game, moments: [...(game.moments ?? []), m] })
+    setShowMoment(false)
+  }
+  const deleteMoment = (id: string) =>
+    onChange({ ...game, moments: (game.moments ?? []).filter((m) => m.id !== id) })
+
+  const moments = game.moments ?? []
+
   return (
     <div>
-      <div className="seg view-toggle">
+      <div className="seg cols-3 view-toggle">
         <button className={view === 'play' ? 'on' : ''} onClick={() => setView('play')}>Play</button>
         <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>Scorecard</button>
+        <button className={view === 'moments' ? 'on' : ''} onClick={() => setView('moments')}>
+          Moments{moments.length > 0 ? ` · ${moments.length}` : ''}
+        </button>
       </div>
 
       {view === 'card' ? (
         <Scorecard game={game} />
+      ) : view === 'moments' ? (
+        <MomentsList game={game} moments={moments} onDelete={deleteMoment} onAdd={() => setShowMoment(true)} />
       ) : (
         <>
           <div className="hole-head">
@@ -423,13 +446,17 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
               par={info.par}
               value={game.scores[hole]?.[p.id]}
               onSet={(s) => setScore(p.id, s)}
+              onShowCard={() => setCardId(p.id)}
             />
           ))}
         </>
       )}
 
       <div style={{ display: 'flex', gap: 8, margin: '14px 0' }}>
-        <button className="cta ghost" style={{ flex: 1 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>
+        <button className="cta ghost" style={{ flex: 1 }} onClick={() => setShowMoment(true)}>
+          📖 Moment
+        </button>
+        <button className="cta ghost" style={{ flex: 1 }} onClick={() => setEndOpen(true)}>
           End Round
         </button>
       </div>
@@ -437,14 +464,65 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
       <MatchBar game={game} />
 
       {allComplete && <SaveSection game={game} onChange={onChange} />}
+
+      {cardId !== null && (() => {
+        const p = game.players.find((x) => x.id === cardId)
+        return p ? <PlayerCardSheet game={game} player={p} onClose={() => setCardId(null)} /> : null
+      })()}
+
+      {showMoment && (
+        <MomentSheet
+          players={game.players}
+          hole={hole}
+          onClose={() => setShowMoment(false)}
+          onSave={addMoment}
+        />
+      )}
+
+      {endOpen && <EndRoundSheet game={game} onChange={onChange} onClose={() => setEndOpen(false)} />}
+    </div>
+  )
+}
+
+/* The day's diary — moments newest-first, with an add button and delete. */
+function MomentsList({ game, moments, onDelete, onAdd }: {
+  game: Game; moments: Moment[]; onDelete: (id: string) => void; onAdd: () => void
+}) {
+  const sorted = [...moments].sort((a, b) => b.ts - a.ts)
+  const shortOf = (id: PlayerId) => game.players.find((p) => p.id === id)?.name.split(' ')[0] ?? '—'
+  return (
+    <div>
+      <button className="cta ghost" style={{ marginBottom: 12 }} onClick={onAdd}>📖 Add a moment</button>
+      {sorted.length === 0 ? (
+        <div className="total-hint" style={{ textAlign: 'center' }}>
+          No moments yet. Tag the day&apos;s shots, putts and trash talk as they happen.
+        </div>
+      ) : (
+        sorted.map((m) => {
+          const story = isStoryTag(m.tag)
+          return (
+            <div className={`moment-item${story ? ' story' : ''}`} key={m.id}>
+              <span className="em">{emojiForTag(m.tag)}</span>
+              <div className="body">
+                <div className="head">
+                  {m.tag}{m.players.length > 0 ? ` — ${m.players.map(shortOf).join(' & ')}` : ''}
+                </div>
+                <div className="meta">Hole {m.hole}</div>
+                {m.note && <div className="note">{story ? m.note : `“${m.note}”`}</div>}
+              </div>
+              <button className="del" aria-label="Delete moment" onClick={() => onDelete(m.id)}>✕</button>
+            </div>
+          )
+        })
+      )}
     </div>
   )
 }
 
 function ScoreRow({
-  game, player, hole, par, value, onSet,
+  game, player, hole, par, value, onSet, onShowCard,
 }: {
-  game: Game; player: GamePlayer; hole: number; par: number; value: number | undefined; onSet: (s: number | null) => void
+  game: Game; player: GamePlayer; hole: number; par: number; value: number | undefined; onSet: (s: number | null) => void; onShowCard: () => void
 }) {
   const base = [par - 2, par - 1, par, par + 1, par + 2, par + 3].filter((v) => v >= 1)
   const overflow = typeof value === 'number' && value > par + 3 ? value : null
@@ -464,12 +542,13 @@ function ScoreRow({
   return (
     <div className="score-card">
       <div className="prow">
-        <div>
+        <button type="button" className="pname-btn" onClick={onShowCard} title={`See ${player.name.split(' ')[0]}'s card`}>
           <span className="pname">{player.name}</span>
+          <span className="pname-card" aria-hidden="true">🗂</span>
           {strokes > 0 && (
             <span className="pstroke">{'●'.repeat(strokes)} {strokes} stroke{strokes > 1 ? 's' : ''} here</span>
           )}
-        </div>
+        </button>
         <span className="ptotal">
           {n > 0 ? `${gross} gross · net ${net === 0 ? 'E' : net > 0 ? '+' + net : net} · ${n}h` : '—'}
         </span>
@@ -567,6 +646,9 @@ async function saveRound(game: Game): Promise<{ ok: boolean; error?: string }> {
       players: game.players.map((p) => ({ id: p.id, strokes: p.strokes })),
       scores: game.scores,
       money,
+      moments: (game.moments ?? []).map((m) => ({
+        hole: m.hole, players: m.players, tag: m.tag, note: m.note ?? null, ts: m.ts,
+      })),
     }),
   })
   if (!res.ok) {
@@ -620,6 +702,52 @@ function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null
         </button>
       )}
       {status === 'error' && <div className="err-msg">⚠ {err}</div>}
+    </div>
+  )
+}
+
+/* The single "I'm stopping now" surface: record (saving pro-rates a partial
+   card to 18 for handicaps) or discard. */
+function EndRoundSheet({ game, onChange, onClose }: {
+  game: Game; onChange: (g: Game | null) => void; onClose: () => void
+}) {
+  const router = useRouter()
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
+  const [err, setErr] = useState('')
+
+  // how many holes carry at least one score, and whether the whole field is in
+  let scored = 0, complete = true
+  for (let h = 1; h <= 18; h++) {
+    const anyone = game.players.some((p) => typeof game.scores[h]?.[p.id] === 'number')
+    if (anyone) scored++
+    if (!game.players.every((p) => typeof game.scores[h]?.[p.id] === 'number')) complete = false
+  }
+  const canSave = scored > 0
+
+  const save = async () => {
+    setStatus('saving')
+    const r = await saveRound(game)
+    if (r.ok) { saveGame(null); router.push('/') }
+    else { setStatus('error'); setErr(r.error ?? '') }
+  }
+
+  return (
+    <div className="sheet-bg" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="grip" />
+        <h2>End the round?</h2>
+        <div className="end-note">
+          {complete
+            ? 'All 18 holes are in.'
+            : `${scored} of 18 holes scored. Recording will pro-rate each card to 18 holes for handicaps (the strokes over par are scaled up).`}
+        </div>
+        <button className="primary" disabled={status === 'saving' || !canSave} onClick={save}>
+          {status === 'saving' ? 'Saving…' : complete ? 'Save & record' : 'Save & record (pro-rated)'}
+        </button>
+        <button className="danger" onClick={() => { onChange(null); onClose() }}>Discard round</button>
+        <button className="flat" onClick={onClose}>Keep playing</button>
+        {status === 'error' && <div className="err-msg">⚠ {err}</div>}
+      </div>
     </div>
   )
 }

@@ -42,6 +42,18 @@ export interface Game {
   tee?: TeeColor
   /** total-only mode: manually entered winnings per player (₹, may be ±) */
   money?: Record<PlayerId, number>
+  /** the day's diary — one-tap tagged moments captured during the round */
+  moments?: Moment[]
+}
+
+/** A tagged moment in the round's diary (see src/lib/golf/moments.ts for tags). */
+export interface Moment {
+  id: string
+  hole: number
+  players: PlayerId[]   // who it's about — may be empty (e.g. a Story note)
+  tag: string
+  note?: string
+  ts: number
 }
 
 export const strokesById = (g: Game): Record<PlayerId, number> =>
@@ -56,6 +68,30 @@ export function holeStrokes(g: Game, id: PlayerId, holeN: number): number {
   const hole = courseOf(g).holes[holeN - 1]
   if (!p || !hole) return 0
   return strokesOnHole(p.strokes, hole.si)
+}
+
+/** A player's running line over the holes they've actually scored. */
+export interface PlayerLine {
+  holes: number      // holes with a score in
+  gross: number      // gross strokes over those holes
+  parPlayed: number  // par of those holes
+  vsPar: number      // gross − parPlayed
+  strokes: number    // handicap strokes received over those holes
+  netVsPar: number   // (gross − strokes) − parPlayed
+}
+
+export function playerLine(g: Game, id: PlayerId): PlayerLine {
+  const holes = courseOf(g).holes
+  let gross = 0, n = 0, parPlayed = 0, strokes = 0
+  for (let h = 1; h <= 18; h++) {
+    const s = g.scores[h]?.[id]
+    if (typeof s === 'number') {
+      gross += s; n++
+      parPlayed += holes[h - 1].par
+      strokes += holeStrokes(g, id, h)
+    }
+  }
+  return { holes: n, gross, parPlayed, vsPar: gross - parPlayed, strokes, netVsPar: gross - strokes - parPlayed }
 }
 
 export interface LiveMatch {
