@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import BottomNav from '@/components/BottomNav'
 
 type Step = { query: string; rowCount: number; error?: string }
 type Msg = { role: 'user' | 'assistant'; content: string; steps?: Step[] }
@@ -227,8 +226,6 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-
-      <BottomNav />
     </div>
   )
 }

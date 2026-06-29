@@ -1,6 +1,5 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import BottomNav from '@/components/BottomNav'
 import Scorecard from '@/components/Scorecard'
 import { liveMatches, liveAutoPress, playerName } from '@/lib/golf/game'
 import { emojiForTag } from '@/lib/golf/moments'
@@ -112,7 +111,6 @@ export default function History() {
         <div className="rname">Select your player first</div>
         <div className="muted">Go to Home and tap “Who am I?”</div>
       </div>
-      <BottomNav />
     </div>
   )
 
@@ -170,7 +168,6 @@ export default function History() {
         <ScorecardSheet roundId={viewId} onClose={() => setViewId(null)} />
       )}
 
-      <BottomNav />
     </div>
   )
 }

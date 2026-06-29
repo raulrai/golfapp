@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import BottomNav from '@/components/BottomNav'
 
 type Player = { id: number; name: string; handicap: number; money: number }
 
@@ -97,7 +96,6 @@ export default function Home() {
           </div>
         </div>
       )}
-      <BottomNav />
     </div>
   )
 }
