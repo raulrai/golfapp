@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
 import { calcHandicapScore } from '@/lib/handicap'
+import { sessionPlayerId, unauthorized } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
+  if ((await sessionPlayerId()) === null) return unauthorized()
   const { round_id, player_id, adjusted_gross_score, money_inr, played_at } = await req.json()
 
   const [round] = await sql`

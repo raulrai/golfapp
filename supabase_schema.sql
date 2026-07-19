@@ -70,6 +70,33 @@ CREATE TABLE IF NOT EXISTS hole_scores (
   UNIQUE (round_id, player_id, hole)
 );
 
+-- Name + PIN auth. Kept separate from players so SELECT * on players never leaks hashes.
+-- pin_hash format: 's1$<saltHex>$<scryptHex>'.
+CREATE TABLE IF NOT EXISTS player_auth (
+  player_id BIGINT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+  pin_hash TEXT NOT NULL,
+  failed_attempts SMALLINT NOT NULL DEFAULT 0,
+  locked_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- An in-progress round, shared live across the fourball's phones. `game` is the full
+-- Game object (src/lib/golf/game.ts); mutations are atomic jsonb_set ops server-side.
+-- On finish the game is persisted into rounds/scores/hole_scores and round_id links there.
+CREATE TABLE IF NOT EXISTS live_rounds (
+  id BIGSERIAL PRIMARY KEY,
+  game JSONB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'live', -- live | finishing | finished | discarded
+  version BIGINT NOT NULL DEFAULT 1,
+  player_ids BIGINT[] NOT NULL,        -- denormalized from game.players for permission checks
+  created_by BIGINT REFERENCES players(id),
+  round_id BIGINT REFERENCES rounds(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS live_rounds_status_idx ON live_rounds(status);
+
 -- The round's diary: one-tap tagged moments captured during play (read-only on History).
 CREATE TABLE IF NOT EXISTS round_moments (
   id BIGSERIAL PRIMARY KEY,

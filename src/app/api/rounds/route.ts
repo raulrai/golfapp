@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
 import { calcHandicap, calcStrokeAllowances } from '@/lib/handicap'
+import { sessionPlayerId, unauthorized } from '@/lib/auth'
 
 export async function GET() {
   const rounds = await sql`
@@ -24,6 +25,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if ((await sessionPlayerId()) === null) return unauthorized()
   const { date, course_id, handicap_pct, player_ids } = await req.json()
 
   const [course] = await sql`SELECT * FROM courses WHERE id = ${course_id}`

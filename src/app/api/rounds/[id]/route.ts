@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import sql from '@/lib/db'
+import { sessionPlayerId, unauthorized } from '@/lib/auth'
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -42,6 +43,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  if ((await sessionPlayerId()) === null) return unauthorized()
   const { id } = await params
 
   // scores, round_players and hole_scores all cascade on round_id.

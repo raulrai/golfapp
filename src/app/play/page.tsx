@@ -3,42 +3,140 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import './play.css'
 import {
-  COURSE, courseOf, loadGame, saveGame, liveMatches, liveAutoPress, holeStrokes, playerName, effectiveMoney,
+  COURSE, courseOf, loadGame, saveGame, holeStrokes, effectiveMoney, playerName, holeResults,
 } from '@/lib/golf/game'
 import type { Game, GamePlayer, Moment } from '@/lib/golf/game'
 import type { CourseMeta, TeeColor } from '@/lib/golf/course'
 import Scorecard from '@/components/Scorecard'
 import PlayerCardSheet from '@/components/PlayerCardSheet'
 import MomentSheet from '@/components/MomentSheet'
+import MatchBar from '@/components/MatchBar'
+import LoginSheet from '@/components/LoginSheet'
+import WhatIfSheet from '@/components/WhatIfSheet'
 import { emojiForTag, isStoryTag } from '@/lib/golf/moments'
 import { TEES, DEFAULT_TEE, teeInfo, withTee } from '@/lib/golf/course'
 import { fieldStrokes, strokesOnHole } from '@/lib/golf/strokes'
 import type { Format, PlayerId, ScoringMode } from '@/lib/golf/types'
+import { useLiveRound, loadLiveRoundId, saveLiveRoundId } from '@/lib/useLiveRound'
+import type { LiveOp, LiveRoundSummary } from '@/lib/live'
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
 type RosterPlayer = { id: number; name: string; handicap: number }
+type Me = { playerId: number; name: string }
 
 export default function PlayPage() {
-  const [game, setGame] = useState<Game | null>(null)
+  const router = useRouter()
+  const [me, setMe] = useState<Me | null | undefined>(undefined)
+  const [roster, setRoster] = useState<RosterPlayer[]>([])
   const [course, setCourse] = useState<CourseMeta>(COURSE)
-  const [loaded, setLoaded] = useState(false)
+  const [liveId, setLiveId] = useState<number | null>(null)
+  const [joinable, setJoinable] = useState<LiveRoundSummary[]>([])
+  const [showSetup, setShowSetup] = useState(false)
+  const [resolving, setResolving] = useState(true)
+  const [startErr, setStartErr] = useState('')
+
+  const live = useLiveRound(liveId)
 
   useEffect(() => {
-    setGame(loadGame())
-    setLoaded(true)
     fetch('/api/course')
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((c: CourseMeta) => { if (c?.holes?.length) setCourse(c) })
       .catch(() => { /* keep the bundled fallback course */ })
+    fetch('/api/players')
+      .then((r) => r.json())
+      .then((d: RosterPlayer[]) => setRoster(d.map((p) => ({ ...p, id: Number(p.id) }))))
+      .catch(() => setRoster([]))
+    fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setMe)
+      .catch(() => setMe(null))
   }, [])
 
-  const update = (g: Game | null) => {
-    setGame(g)
-    saveGame(g)
+  // Once we know who's logged in: rejoin our saved live round, migrate a
+  // pre-sync localStorage round to the server, or list joinable rounds.
+  useEffect(() => {
+    if (!me) return
+    let cancelled = false
+    ;(async () => {
+      const saved = loadLiveRoundId()
+      if (saved !== null) {
+        if (!cancelled) { setLiveId(saved); setResolving(false) }
+        return
+      }
+      const legacy = loadGame()
+      if (legacy && legacy.players.some((p) => Number(p.id) === me.playerId)) {
+        try {
+          const res = await fetch('/api/live-rounds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: legacy }),
+          })
+          if (res.ok) {
+            const { id } = await res.json()
+            saveGame(null) // migrated — the server copy is now the truth
+            saveLiveRoundId(id)
+            if (!cancelled) { setLiveId(id); setResolving(false) }
+            return
+          }
+        } catch { /* offline — leave the legacy round in place and fall through */ }
+      }
+      try {
+        const res = await fetch('/api/live-rounds')
+        if (res.ok) {
+          const { rounds } = (await res.json()) as { rounds: LiveRoundSummary[] }
+          const mine = rounds.filter((r) => r.playerIds.includes(me.playerId))
+          if (!cancelled) setJoinable(mine)
+        }
+      } catch { /* list is best-effort */ }
+      if (!cancelled) setResolving(false)
+    })()
+    return () => { cancelled = true }
+  }, [me])
+
+  // A round can end under us via another phone's poll: discard → back to setup.
+  // Guarded adjust-during-render; clearing localStorage here is idempotent.
+  if (liveId !== null && (live.status === 'discarded' || live.status === 'gone')) {
+    saveLiveRoundId(null)
+    setLiveId(null)
+    setShowSetup(false)
+    setJoinable([])
   }
 
-  if (!loaded) return <div className="play" />
+  const join = (id: number) => {
+    saveLiveRoundId(id)
+    setLiveId(id)
+  }
+
+  const startRound = async (g: Game) => {
+    setStartErr('')
+    try {
+      const res = await fetch('/api/live-rounds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ game: g }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setStartErr(data.error ?? 'Could not start the round'); return }
+      join(data.id)
+    } catch {
+      setStartErr('Network error — could not start the round')
+    }
+  }
+
+  const finishRound = async () => {
+    const r = await live.finish()
+    if ('roundId' in r) saveLiveRoundId(null)
+    return r
+  }
+
+  const discardRound = async () => {
+    const r = await live.discard()
+    if (r.ok) { saveLiveRoundId(null); setLiveId(null); setJoinable([]) }
+    return r
+  }
+
+  const game = liveId !== null ? live.game : null
 
   return (
     <div className="play">
@@ -47,9 +145,66 @@ export default function PlayPage() {
         <h1 className="serif">The Round</h1>
         <div className="sub">{course.short} · {(game ? courseOf(game) : course).tees}</div>
       </header>
-      {game
-        ? <Scoring game={game} onChange={update} />
-        : <Setup course={course} onStart={update} />}
+
+      {me === undefined || (me && resolving) ? null : me === null ? (
+        <>
+          <div className="total-hint" style={{ textAlign: 'center', marginTop: 20 }}>
+            Sign in to score a round.
+          </div>
+          {roster.length > 0 && (
+            <LoginSheet
+              players={roster}
+              onLoggedIn={(pid) => {
+                const p = roster.find((r) => r.id === pid)
+                setMe({ playerId: pid, name: p?.name ?? '' })
+              }}
+            />
+          )}
+        </>
+      ) : liveId !== null ? (
+        !game ? (
+          <div className="total-hint" style={{ textAlign: 'center', marginTop: 20 }}>
+            {live.status === 'gone' ? 'Round not found.' : 'Loading round…'}
+          </div>
+        ) : live.status === 'finished' ? (
+          <div className="save-card">
+            <div className="setup-label">Round saved</div>
+            <div className="saved-msg">✓ Saved — handicaps &amp; money updated</div>
+            <button
+              className="cta"
+              onClick={() => { saveLiveRoundId(null); router.push('/') }}
+            >Done</button>
+          </div>
+        ) : (
+          <Scoring
+            game={game}
+            mutate={live.mutate}
+            pendingCount={live.pendingCount}
+            onFinish={finishRound}
+            onDiscard={discardRound}
+          />
+        )
+      ) : (
+        <>
+          {joinable.length > 0 && !showSetup && (
+            <div className="setup-step">
+              <div className="setup-label">Your fourball is already playing</div>
+              {joinable.map((r) => (
+                <button key={r.id} className="cta" style={{ marginBottom: 8 }} onClick={() => join(r.id)}>
+                  Join · {r.game.players.map((p) => playerName(r.game, p.id).split(' ')[0]).join(' · ')}
+                </button>
+              ))}
+              <button className="cta ghost" onClick={() => setShowSetup(true)}>Start a different round</button>
+            </div>
+          )}
+          {(joinable.length === 0 || showSetup) && (
+            <>
+              {startErr && <div className="err-msg">⚠ {startErr}</div>}
+              <Setup course={course} onStart={startRound} />
+            </>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -154,7 +309,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
 
       {count && (
         <div className="setup-step">
-          <div className="setup-label">Who's playing · pick {count} ({picked.length}/{count})</div>
+          <div className="setup-label">Who&rsquo;s playing · pick {count} ({picked.length}/{count})</div>
           <div className="roster">
             {roster.map((p) => (
               <button key={p.id} className={picked.includes(p.id) ? 'on' : ''} onClick={() => togglePick(p.id)}>
@@ -347,7 +502,13 @@ function StrokePreview({
 
 const REL: Record<number, string> = { [-2]: 'Eagle', [-1]: 'Birdie', 0: 'Par', 1: 'Bogey', 2: 'Dbl', 3: '+3' }
 
-function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) => void }) {
+function Scoring({ game, mutate, pendingCount, onFinish, onDiscard }: {
+  game: Game
+  mutate: (op: LiveOp) => void
+  pendingCount: number
+  onFinish: () => Promise<{ roundId: number } | { error: string }>
+  onDiscard: () => Promise<{ ok: boolean; error?: string }>
+}) {
   const firstIncomplete = () => {
     for (let h = 1; h <= 18; h++) {
       if (!game.players.every((p) => typeof game.scores[h]?.[p.id] === 'number')) return h
@@ -359,8 +520,29 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
   const [cardId, setCardId] = useState<PlayerId | null>(null)
   const [showMoment, setShowMoment] = useState(false)
   const [endOpen, setEndOpen] = useState(false)
+  const [whatIf, setWhatIf] = useState(false)
+  const [seen17, setSeen17] = useState(false)
 
-  if (game.scoringMode === 'total') return <TotalEntry game={game} onChange={onChange} />
+  const showsAp = game.format === 'autopress' || game.format === 'both'
+  const thru = game.scoringMode === 'hole' ? holeResults(game).length : 0
+
+  // Auto-open the 18th-hole what-if once, the moment hole 17 completes.
+  // State-driven (not tap-driven) because the 17th can finish via another
+  // marker's phone; guarded adjust-during-render, dismissal is remembered
+  // per round for the session.
+  if (showsAp && thru === 17 && !seen17) {
+    setSeen17(true)
+    if (!sessionStorage.getItem(`ap17_${game.id}`)) setWhatIf(true)
+  }
+
+  const closeWhatIf = () => {
+    setWhatIf(false)
+    try { sessionStorage.setItem(`ap17_${game.id}`, '1') } catch { /* remember-me is best-effort */ }
+  }
+
+  if (game.scoringMode === 'total') {
+    return <TotalEntry game={game} mutate={mutate} onFinish={onFinish} onDiscard={onDiscard} />
+  }
 
   const allComplete = (() => {
     for (let h = 1; h <= 18; h++) {
@@ -385,22 +567,20 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
   })()
 
   const setScore = (pid: PlayerId, score: number | null) => {
+    mutate({ op: 'score', hole, playerId: pid, strokes: score })
     const scores = { ...game.scores, [hole]: { ...game.scores[hole] } }
     if (score === null) delete scores[hole][pid]
     else scores[hole][pid] = score
-    const next = { ...game, scores }
-    onChange(next)
     const allIn = game.players.every((p) => typeof scores[hole]?.[p.id] === 'number')
     if (allIn && score !== null && hole < 18) setTimeout(() => setHole((h) => Math.min(18, h + 1)), 700)
   }
 
   const addMoment = (who: PlayerId[], tag: string, note: string) => {
     const m: Moment = { id: newId(), hole, players: who, tag, note: note || undefined, ts: Date.now() }
-    onChange({ ...game, moments: [...(game.moments ?? []), m] })
+    mutate({ op: 'moment.add', moment: m })
     setShowMoment(false)
   }
-  const deleteMoment = (id: string) =>
-    onChange({ ...game, moments: (game.moments ?? []).filter((m) => m.id !== id) })
+  const deleteMoment = (id: string) => mutate({ op: 'moment.delete', momentId: id })
 
   const moments = game.moments ?? []
 
@@ -461,9 +641,28 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
         </button>
       </div>
 
-      <MatchBar game={game} />
+      {pendingCount > 0 && (
+        <div className="total-hint" style={{ textAlign: 'center', margin: '8px 0' }}>
+          ↻ {pendingCount} score{pendingCount > 1 ? 's' : ''} waiting to sync…
+        </div>
+      )}
 
-      {allComplete && <SaveSection game={game} onChange={onChange} />}
+      <MatchBar game={game}>
+        {thru === 17 && (
+          <button
+            onClick={() => setWhatIf(true)}
+            style={{
+              width: '100%', marginTop: 8, padding: '8px 0', cursor: 'pointer',
+              background: 'transparent', border: '1px dashed var(--line)', borderRadius: 10,
+              color: 'var(--gold)', fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
+            }}
+          >
+            🔮 What happens on the 18th?
+          </button>
+        )}
+      </MatchBar>
+
+      {allComplete && <SaveSection game={game} onFinish={onFinish} />}
 
       {cardId !== null && (() => {
         const p = game.players.find((x) => x.id === cardId)
@@ -479,7 +678,9 @@ function Scoring({ game, onChange }: { game: Game; onChange: (g: Game | null) =>
         />
       )}
 
-      {endOpen && <EndRoundSheet game={game} onChange={onChange} onClose={() => setEndOpen(false)} />}
+      {whatIf && <WhatIfSheet game={game} onClose={closeWhatIf} />}
+
+      {endOpen && <EndRoundSheet game={game} onFinish={onFinish} onDiscard={onDiscard} onClose={() => setEndOpen(false)} />}
     </div>
   )
 }
@@ -573,92 +774,10 @@ function ScoreRow({
   )
 }
 
-function MatchBar({ game }: { game: Game }) {
-  const showMatch = game.format === 'match' || game.format === 'both'
-  const showAp = game.format === 'autopress' || game.format === 'both'
-  const matches = showMatch ? liveMatches(game) : []
-  const ap = showAp ? liveAutoPress(game) : null
-
-  return (
-    <div className="match-bar">
-      {matches.map((m, i) => {
-        const s = m.state
-        const cls = s.thru === 0 || s.diff === 0 ? 'as' : s.diff > 0 ? 'up-a' : 'up-b'
-        const lead = s.diff > 0 ? m.a : m.b
-        const status = s.thru === 0
-          ? '—'
-          : s.decided
-            ? (s.winner === 'half' ? 'HALVED' : `${shortSide(game, lead)} ${s.resultText}`)
-            : (s.diff === 0 ? `${s.statusText} · ${s.thru}` : `${shortSide(game, lead)} ${s.statusText} · ${s.thru}`)
-        return (
-          <div className="mline" key={i}>
-            <span className="mkind">{m.kind === 'fourball' ? '4-Ball' : 'Singles'}</span>
-            <span className="mwho">{m.label}</span>
-            <span className={`mstat ${cls}`}>{status}</span>
-          </div>
-        )
-      })}
-      {ap && (
-        <div className={`ap-block ${matches.length ? 'ap-line' : ''}`}>
-          <div className="mline ap-head">
-            <span className="mkind">Auto Press</span>
-            <span className="mwho">
-              {ap.thru === 0
-                ? 'starts at hole 1'
-                : ap.leader
-                  ? `${shortSide(game, ap.leader)} leads ₹${Math.abs(ap.moneyToA).toLocaleString('en-IN')}`
-                  : 'all square'}
-            </span>
-            <span className="mstat">@ ₹{game.stake}/match</span>
-          </div>
-          {ap.bets.map((b) => (
-            <div className="ap-bet" key={b.key}>
-              <span className="ap-betlbl">{b.label}</span>
-              <span className="ap-string">{b.thru === 0 ? '—' : b.string}</span>
-              <span className={`ap-money ${b.settlement.netToA === 0 ? 'as' : b.settlement.netToA > 0 ? 'up-a' : 'up-b'}`}>
-                {b.settlement.netToA === 0
-                  ? 'level'
-                  : `${shortSide(game, b.settlement.netToA > 0 ? game.teamA : game.teamB)} ₹${Math.abs(b.settlement.netToA * game.stake).toLocaleString('en-IN')}`}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const shortSide = (game: Game, side: PlayerId[]) =>
-  side.map((id) => playerName(game, id).split(' ')[0]).join('&')
-
-async function saveRound(game: Game): Promise<{ ok: boolean; error?: string }> {
-  const money = effectiveMoney(game)
-  const res = await fetch('/api/play-rounds', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      scoringMode: game.scoringMode,
-      handicap_pct: game.allowancePct,
-      format: game.format,
-      stake: game.stake,
-      teamA: game.teamA,
-      teamB: game.teamB,
-      players: game.players.map((p) => ({ id: p.id, strokes: p.strokes })),
-      scores: game.scores,
-      money,
-      moments: (game.moments ?? []).map((m) => ({
-        hole: m.hole, players: m.players, tag: m.tag, note: m.note ?? null, ts: m.ts,
-      })),
-    }),
-  })
-  if (!res.ok) {
-    const d = await res.json().catch(() => ({}))
-    return { ok: false, error: d.error ?? 'Save failed' }
-  }
-  return { ok: true }
-}
-
-function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null) => void }) {
+function SaveSection({ game, onFinish }: {
+  game: Game
+  onFinish: () => Promise<{ roundId: number } | { error: string }>
+}) {
   const router = useRouter()
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [err, setErr] = useState('')
@@ -668,12 +787,11 @@ function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null
 
   const save = async () => {
     setStatus('saving')
-    const r = await saveRound(game)
-    if (r.ok) {
+    const r = await onFinish()
+    if ('roundId' in r) {
       setStatus('saved')
-      saveGame(null)      // clear the active round from storage
       router.push('/')    // back to the home screen
-    } else { setStatus('error'); setErr(r.error ?? '') }
+    } else { setStatus('error'); setErr(r.error) }
   }
 
   return (
@@ -692,10 +810,7 @@ function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null
         </div>
       )}
       {status === 'saved' ? (
-        <>
-          <div className="saved-msg">✓ Saved — handicaps &amp; money updated</div>
-          <button className="cta ghost" onClick={() => onChange(null)}>Start a new round</button>
-        </>
+        <div className="saved-msg">✓ Saved — handicaps &amp; money updated</div>
       ) : (
         <button className="cta" disabled={status === 'saving'} onClick={save}>
           {status === 'saving' ? 'Saving…' : 'Save Round'}
@@ -707,9 +822,13 @@ function SaveSection({ game, onChange }: { game: Game; onChange: (g: Game | null
 }
 
 /* The single "I'm stopping now" surface: record (saving pro-rates a partial
-   card to 18 for handicaps) or discard. */
-function EndRoundSheet({ game, onChange, onClose }: {
-  game: Game; onChange: (g: Game | null) => void; onClose: () => void
+   card to 18 for handicaps) or discard. Both act for the whole fourball —
+   everyone's phone follows within a poll. */
+function EndRoundSheet({ game, onFinish, onDiscard, onClose }: {
+  game: Game
+  onFinish: () => Promise<{ roundId: number } | { error: string }>
+  onDiscard: () => Promise<{ ok: boolean; error?: string }>
+  onClose: () => void
 }) {
   const router = useRouter()
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
@@ -726,9 +845,16 @@ function EndRoundSheet({ game, onChange, onClose }: {
 
   const save = async () => {
     setStatus('saving')
-    const r = await saveRound(game)
-    if (r.ok) { saveGame(null); router.push('/') }
-    else { setStatus('error'); setErr(r.error ?? '') }
+    const r = await onFinish()
+    if ('roundId' in r) router.push('/')
+    else { setStatus('error'); setErr(r.error) }
+  }
+
+  const discard = async () => {
+    if (!confirm('Discard this round for everyone in the fourball?')) return
+    const r = await onDiscard()
+    if (r.ok) onClose()
+    else { setStatus('error'); setErr(r.error ?? 'Discard failed') }
   }
 
   return (
@@ -740,11 +866,12 @@ function EndRoundSheet({ game, onChange, onClose }: {
           {complete
             ? 'All 18 holes are in.'
             : `${scored} of 18 holes scored. Recording will pro-rate each card to 18 holes for handicaps (the strokes over par are scaled up).`}
+          {' '}This ends the round for the whole fourball.
         </div>
         <button className="primary" disabled={status === 'saving' || !canSave} onClick={save}>
           {status === 'saving' ? 'Saving…' : complete ? 'Save & record' : 'Save & record (pro-rated)'}
         </button>
-        <button className="danger" onClick={() => { onChange(null); onClose() }}>Discard round</button>
+        <button className="danger" onClick={discard}>Discard round (for everyone)</button>
         <button className="flat" onClick={onClose}>Keep playing</button>
         {status === 'error' && <div className="err-msg">⚠ {err}</div>}
       </div>
@@ -754,21 +881,18 @@ function EndRoundSheet({ game, onChange, onClose }: {
 
 /* ───────────────────────── Total-only entry ───────────────────────── */
 
-function TotalEntry({ game, onChange }: { game: Game; onChange: (g: Game | null) => void }) {
-  const setTotal = (pid: PlayerId, v: number | null) => {
-    // store a player's total under a synthetic hole 0
-    const scores = { ...game.scores, 0: { ...game.scores[0] } }
-    if (v === null) delete scores[0][pid]
-    else scores[0][pid] = v
-    onChange({ ...game, scores })
-  }
+function TotalEntry({ game, mutate, onFinish, onDiscard }: {
+  game: Game
+  mutate: (op: LiveOp) => void
+  onFinish: () => Promise<{ roundId: number } | { error: string }>
+  onDiscard: () => Promise<{ ok: boolean; error?: string }>
+}) {
+  // a player's total lives under a synthetic hole 0
+  const setTotal = (pid: PlayerId, v: number | null) =>
+    mutate({ op: 'score', hole: 0, playerId: pid, strokes: v })
 
-  const setMoney = (pid: PlayerId, v: number | null) => {
-    const money = { ...(game.money ?? {}) }
-    if (v === null) delete money[pid]
-    else money[pid] = v
-    onChange({ ...game, money })
-  }
+  const setMoney = (pid: PlayerId, v: number | null) =>
+    mutate({ op: 'money', playerId: pid, amount: v })
 
   const allIn = game.players.every((p) => typeof game.scores[0]?.[p.id] === 'number')
   // rank by net (lowest first), only meaningful once any total is in
@@ -846,11 +970,11 @@ function TotalEntry({ game, onChange }: { game: Game; onChange: (g: Game | null)
 
       {allIn ? (
         <>
-          <SaveSection game={game} onChange={onChange} />
-          <button className="cta ghost" style={{ marginTop: 10 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>End Round</button>
+          <SaveSection game={game} onFinish={onFinish} />
+          <button className="cta ghost" style={{ marginTop: 10 }} onClick={() => { if (confirm('End this round for everyone and clear it?')) onDiscard() }}>End Round</button>
         </>
       ) : (
-        <button className="cta ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('End this round and clear it?')) onChange(null) }}>End Round</button>
+        <button className="cta ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('End this round for everyone and clear it?')) onDiscard() }}>End Round</button>
       )}
     </div>
   )
