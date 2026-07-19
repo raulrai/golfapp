@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
 import { calcHandicapScore } from '@/lib/handicap'
-import { sessionPlayerId, unauthorized } from '@/lib/auth'
+import { sessionPlayerId, unauthorized, forbidden, isAdmin } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
-  if ((await sessionPlayerId()) === null) return unauthorized()
+  const pid = await sessionPlayerId()
+  if (pid === null) return unauthorized()
   const { round_id, player_id, adjusted_gross_score, money_inr, played_at } = await req.json()
+  // You may only write your own score — admins may write anyone's.
+  if (Number(player_id) !== pid && !(await isAdmin(pid))) return forbidden()
 
   const [round] = await sql`
     SELECT r.*, c.course_rating, c.slope_rating

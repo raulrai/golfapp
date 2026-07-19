@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import sql from '@/lib/db'
-import { sessionPlayerId, unauthorized } from '@/lib/auth'
+import { sessionPlayerId, unauthorized, forbidden, isAdmin } from '@/lib/auth'
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  if ((await sessionPlayerId()) === null) return unauthorized()
   const { id } = await params
 
   const [round] = await sql`
@@ -43,7 +44,10 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  if ((await sessionPlayerId()) === null) return unauthorized()
+  const pid = await sessionPlayerId()
+  if (pid === null) return unauthorized()
+  // Deleting wipes every player's scores for the round — admins only.
+  if (!(await isAdmin(pid))) return forbidden()
   const { id } = await params
 
   // scores, round_players and hole_scores all cascade on round_id.
