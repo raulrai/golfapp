@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
+import { sessionPlayerId, unauthorized } from '@/lib/auth'
 
 // Natural-language querying over the golf database.
 // The model is given the schema and a single read-only `run_sql` tool; it writes
@@ -106,6 +107,7 @@ async function callModel(messages: ChatMsg[]) {
 }
 
 export async function POST(req: NextRequest) {
+  if ((await sessionPlayerId()) === null) return unauthorized()
   if (!process.env.OPENROUTER_API_KEY) {
     return NextResponse.json({ error: 'OPENROUTER_API_KEY is not set on the server.' }, { status: 500 })
   }

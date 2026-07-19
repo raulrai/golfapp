@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import sql from '@/lib/db'
+import { sessionPlayerId, unauthorized } from '@/lib/auth'
 
 const PLAYERS = [
   'Tav', 'Raul', 'Nutty', 'Poky', 'Chauds', 'AC', 'Kartik', 'DP', 'Boozy',
@@ -32,6 +33,7 @@ const SCORES: Record<string, number[]> = {
 }
 
 export async function DELETE() {
+  if ((await sessionPlayerId()) === null) return unauthorized()
   await sql`TRUNCATE scores, round_players, rounds, courses, players RESTART IDENTITY CASCADE`
   return NextResponse.json({ message: 'Reset complete' })
 }

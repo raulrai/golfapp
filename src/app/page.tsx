@@ -1,34 +1,51 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import LoginSheet from '@/components/LoginSheet'
+import SoloRoundSheet from '@/components/SoloRoundSheet'
 
 type Player = { id: number; name: string; handicap: number; money: number }
 
 export default function Home() {
   const [players, setPlayers] = useState<Player[]>([])
-  const [myId, setMyId] = useState<number | null>(null)
   const [me, setMe] = useState<Player | null>(null)
+  const [amAdmin, setAmAdmin] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
+  const [showSolo, setShowSolo] = useState(false)
+  const [soloSaved, setSoloSaved] = useState(false)
+  // bumped after a solo save so stats and the leaderboard re-fetch
+  const [refresh, setRefresh] = useState(0)
 
   useEffect(() => {
-    fetch('/api/players').then(r => r.json()).then((data: Player[]) => {
+    Promise.all([
+      fetch('/api/players').then(r => r.json()) as Promise<Player[]>,
+      fetch('/api/auth/me').then(r => (r.ok ? r.json() : null)) as Promise<{ playerId: number; isAdmin?: boolean } | null>,
+    ]).then(([raw, session]) => {
+      const data = raw.map((p) => ({ ...p, id: Number(p.id) }))
       setPlayers(data)
-      const saved = localStorage.getItem('golf_player_id')
-      if (saved) {
-        const id = Number(saved)
-        setMyId(id)
-        setMe(data.find(p => p.id === id) ?? null)
+      if (session) {
+        localStorage.setItem('golf_player_id', String(session.playerId))
+        setMe(data.find(p => p.id === session.playerId) ?? null)
+        setAmAdmin(session.isAdmin === true)
       } else {
+        localStorage.removeItem('golf_player_id')
+        setAmAdmin(false)
         setShowPicker(true)
       }
     })
-  }, [])
+  }, [refresh])
 
-  function selectPlayer(p: Player) {
-    localStorage.setItem('golf_player_id', String(p.id))
-    setMyId(p.id)
-    setMe(p)
+  function loggedIn(playerId: number) {
+    localStorage.setItem('golf_player_id', String(playerId))
+    setMe(players.find(p => p.id === playerId) ?? null)
     setShowPicker(false)
+  }
+
+  async function switchPlayer() {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    localStorage.removeItem('golf_player_id')
+    setMe(null)
+    setShowPicker(true)
   }
 
   return (
@@ -43,12 +60,12 @@ export default function Home() {
               : new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
         </div>
-        <button onClick={() => setShowPicker(true)} style={{
+        <button onClick={() => (me ? switchPlayer() : setShowPicker(true))} style={{
           background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10,
           color: 'var(--gold)', fontSize: 13, fontWeight: 600, padding: '7px 14px', cursor: 'pointer',
           fontFamily: 'inherit', marginTop: 8,
         }}>
-          {me ? 'Switch' : 'Who am I?'}
+          {me ? 'Switch' : 'Sign in'}
         </button>
       </div>
 
@@ -79,24 +96,76 @@ export default function Home() {
           <div className="chev">›</div>
         </Link>
 
-        <QuickLeaderboard />
+        <button
+          className="cta-card"
+          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+          onClick={() => (me ? setShowSolo(true) : setShowPicker(true))}
+        >
+          <div>
+            <div style={{ fontSize: 22, marginBottom: 4 }}>🧍</div>
+            <div className="ttl">{amAdmin ? 'Enter a Score' : 'Solo Round'}</div>
+            <div className="desc">
+              {amAdmin ? 'Solo rounds — yours or any player’s (admin)' : `Played on your own? Enter your score${me ? '' : ' — sign in first'}`}
+            </div>
+          </div>
+          <div className="chev">›</div>
+        </button>
+
+        {soloSaved && (
+          <div className="panel" style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }}>
+            Round saved ✓ — handicap updated
+          </div>
+        )}
+
+        {me && <LiveNowTeaser />}
+
+        <QuickLeaderboard key={refresh} />
       </div>
 
       {showPicker && (
-        <div className="sheet-bg">
-          <div className="sheet">
-            <div className="grip" />
-            <h2>Who are you?</h2>
-            {[...players].sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-              <button key={p.id} className={myId === p.id ? 'on' : ''} onClick={() => selectPlayer(p)}>
-                <span>{p.name}</span>
-                <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>HCP {p.handicap.toFixed(1)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <LoginSheet
+          players={players}
+          onLoggedIn={loggedIn}
+          onClose={me ? () => setShowPicker(false) : undefined}
+        />
+      )}
+
+      {showSolo && me && (
+        <SoloRoundSheet
+          player={me}
+          roster={amAdmin ? players : undefined}
+          onSaved={() => {
+            setShowSolo(false)
+            setSoloSaved(true)
+            setRefresh((n) => n + 1)
+            setTimeout(() => setSoloSaved(false), 4000)
+          }}
+          onClose={() => setShowSolo(false)}
+        />
       )}
     </div>
+  )
+}
+
+/** "Live now" card — shown only while at least one fourball is out playing. */
+function LiveNowTeaser() {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    fetch('/api/live-rounds')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { rounds: unknown[] } | null) => { if (d) setN(d.rounds.length) })
+      .catch(() => { /* teaser is best-effort */ })
+  }, [])
+  if (n === 0) return null
+  return (
+    <Link href="/live" className="cta-card">
+      <div>
+        <div style={{ fontSize: 22, marginBottom: 4 }}>📡</div>
+        <div className="ttl">Live now · {n} round{n > 1 ? 's' : ''}</div>
+        <div className="desc">Watch the fourballs out on the course</div>
+      </div>
+      <div className="chev">›</div>
+    </Link>
   )
 }
 

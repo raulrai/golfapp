@@ -5,6 +5,10 @@ import { strokesOnHole, fieldStrokes } from '../src/lib/golf/strokes.ts'
 import { runAutoPress, renderAutoPress, settleAutoPress, autoPressBets } from '../src/lib/golf/autopress.ts'
 import type { HoleResult } from '../src/lib/golf/autopress.ts'
 import type { Scores } from '../src/lib/golf/types.ts'
+import { holeResults } from '../src/lib/golf/game.ts'
+import type { Game } from '../src/lib/golf/game.ts'
+import { hole18Scenarios } from '../src/lib/golf/whatif.ts'
+import type { Hole18Scenario } from '../src/lib/golf/whatif.ts'
 
 const holes = DELHI_LODHI_BLUE.holes
 let pass = 0
@@ -110,6 +114,49 @@ ok('bets: three bets keyed front/back/overall',
 ok('bets: front matches a 9-hole run', bets[0].string === renderAutoPress(runAutoPress(eighteen.slice(0, 9))))
 ok('bets: back is a fresh string from hole 10', bets[1].string === renderAutoPress(runAutoPress(eighteen.slice(9))))
 ok('bets: overall spans all 18', bets[2].thru === 18)
+
+// ---------- Hole-18 what-if (three pre-settled finishes after 17 holes) ----------
+// Singles fixture, scratch both sides: p1 gross 3 wins the hole, 4-4 halves,
+// p1 gross 5 loses it. Alternate wins so presses actually open.
+const mkWhatIfGame = (n: number, format: 'autopress' | 'match' = 'autopress'): Game => {
+  const scores: Scores = {}
+  for (let h = 1; h <= n; h++) scores[h] = { 1: h % 3 === 0 ? 5 : h % 2 === 0 ? 4 : 3, 2: 4 }
+  return {
+    id: 'whatif-test', createdAt: 0,
+    players: [
+      { id: 1, name: 'Raul', handicap: 8, strokes: 0 },
+      { id: 2, name: 'Atul', handicap: 8, strokes: 0 },
+    ],
+    scoringMode: 'hole', format, allowancePct: 100,
+    teamA: [1], teamB: [2], singles: [], stake: 200, scores,
+  }
+}
+
+const g17 = mkWhatIfGame(17)
+const r17 = holeResults(g17)
+ok('whatif: fixture has 17 completed holes', r17.length === 17)
+
+const scenarios = hole18Scenarios(g17)
+ok('whatif: three scenarios in A/H/B order',
+  scenarios !== null && scenarios.length === 3 && scenarios.map((s) => s.outcome).join('') === 'AHB')
+ok('whatif: null at 16 thru', hole18Scenarios(mkWhatIfGame(16)) === null)
+ok('whatif: null at 18 thru', hole18Scenarios(mkWhatIfGame(18)) === null)
+ok('whatif: null for match-only format', hole18Scenarios(mkWhatIfGame(17, 'match')) === null)
+
+if (scenarios) {
+  const halved = scenarios[1]
+  const expectHalved = autoPressBets([...r17, 'H'])
+  ok('whatif: halved scenario equals appending H and re-settling',
+    JSON.stringify(halved.bets) === JSON.stringify(expectHalved))
+  ok('whatif: money = net matches × stake, every scenario',
+    scenarios.every((s) => s.moneyToA === s.netMatchesToA * 200
+      && s.netMatchesToA === s.bets.reduce((a, b) => a + b.settlement.netToA, 0)))
+  const front = (s: Hole18Scenario) => JSON.stringify(s.bets[0])
+  ok('whatif: front-9 bet identical across scenarios (already settled)',
+    front(scenarios[0]) === front(scenarios[1]) && front(scenarios[1]) === front(scenarios[2]))
+  ok('whatif: A-wins pays A at least as much as B-wins does',
+    scenarios[0].moneyToA > scenarios[2].moneyToA)
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1

@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation'
 const NAV = [
   { href: '/', label: 'Home', icon: '⛳' },
   { href: '/play', label: 'Play', icon: '🏌️' },
-  { href: '/handicaps', label: 'Handicaps', icon: '📊' },
+  { href: '/live', label: 'Live', icon: '📡' },
+  { href: '/handicaps', label: 'Hcp', icon: '📊' },
   { href: '/leaderboard', label: 'Money', icon: '🏆' },
   { href: '/history', label: 'History', icon: '📋' },
   { href: '/chat', label: 'Ask', icon: '💬' },
@@ -23,7 +24,7 @@ export default function BottomNav() {
       paddingBottom: 'env(safe-area-inset-bottom)',
     }}>
       {NAV.map(n => {
-        const active = path === n.href
+        const active = path === n.href || (n.href !== '/' && path.startsWith(n.href + '/'))
         return (
           <Link key={n.href} href={n.href} style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
