@@ -13,12 +13,16 @@ const labelStyle: React.CSSProperties = {
 }
 
 /** Enter a round you played on your own: gross total + optional winnings.
- *  Saves as a 1-player total-mode round — updates handicap (and money if given). */
-export default function SoloRoundSheet({ player, onSaved, onClose }: {
+ *  Saves as a 1-player total-mode round — updates handicap (and money if given).
+ *  Admins get a picker and can file the round for any player. */
+export default function SoloRoundSheet({ player, roster, onSaved, onClose }: {
   player: { id: number; name: string }
+  /** When set (admin only), the score can be entered for any of these players. */
+  roster?: { id: number; name: string }[]
   onSaved: (roundId: number) => void
   onClose: () => void
 }) {
+  const [forId, setForId] = useState(player.id)
   const [gross, setGross] = useState('')
   const [money, setMoney] = useState('')
   const [lost, setLost] = useState(false)
@@ -40,9 +44,9 @@ export default function SoloRoundSheet({ player, onSaved, onClose }: {
         body: JSON.stringify({
           date,
           scoringMode: 'total',
-          players: [{ id: player.id, strokes: 0 }],
-          scores: { 0: { [player.id]: grossNum } },
-          money: moneyNum === null ? {} : { [player.id]: moneyNum },
+          players: [{ id: forId, strokes: 0 }],
+          scores: { 0: { [forId]: grossNum } },
+          money: moneyNum === null ? {} : { [forId]: moneyNum },
         }),
       })
       const data = await res.json()
@@ -62,10 +66,26 @@ export default function SoloRoundSheet({ player, onSaved, onClose }: {
     <div className="sheet-bg" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="grip" />
-        <h2>Solo round · {player.name}</h2>
+        <h2>{roster ? 'Enter a score' : `Solo round · ${player.name}`}</h2>
         <p className="muted" style={{ margin: '4px 0 2px', fontSize: 14, textAlign: 'center' }}>
-          Your 18-hole gross counts towards your handicap. Winnings are optional.
+          {roster ? 'As admin you can file this for any player.' : 'Your 18-hole gross counts towards your handicap. Winnings are optional.'}
         </p>
+
+        {roster && (
+          <>
+            <label style={labelStyle}>Player</label>
+            <select
+              value={forId}
+              disabled={busy}
+              onChange={(e) => setForId(Number(e.target.value))}
+              style={{ ...inputStyle, fontSize: 16, padding: '12px 8px', textAlign: 'center' }}
+            >
+              {[...roster].sort((a, b) => a.name.localeCompare(b.name)).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}{p.id === player.id ? ' (me)' : ''}</option>
+              ))}
+            </select>
+          </>
+        )}
 
         <label style={labelStyle}>Gross score</label>
         <input

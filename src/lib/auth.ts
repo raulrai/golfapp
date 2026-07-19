@@ -23,6 +23,12 @@ export function forbidden(): NextResponse {
   return NextResponse.json({ error: 'Not allowed' }, { status: 403 })
 }
 
+/** Admins may act on rounds they didn't play in (e.g. filing someone else's card). */
+export async function isAdmin(playerId: number): Promise<boolean> {
+  const [row] = await sql`SELECT is_admin FROM players WHERE id = ${playerId}`
+  return row?.is_admin === true
+}
+
 /** Is this player one of the live round's fourball? (Edit rights are fourball-wide.) */
 export async function requireRoundMember(liveRoundId: number, playerId: number): Promise<boolean> {
   const rows = await sql`

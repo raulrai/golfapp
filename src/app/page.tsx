@@ -9,6 +9,7 @@ type Player = { id: number; name: string; handicap: number; money: number }
 export default function Home() {
   const [players, setPlayers] = useState<Player[]>([])
   const [me, setMe] = useState<Player | null>(null)
+  const [amAdmin, setAmAdmin] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [showSolo, setShowSolo] = useState(false)
   const [soloSaved, setSoloSaved] = useState(false)
@@ -18,15 +19,17 @@ export default function Home() {
   useEffect(() => {
     Promise.all([
       fetch('/api/players').then(r => r.json()) as Promise<Player[]>,
-      fetch('/api/auth/me').then(r => (r.ok ? r.json() : null)) as Promise<{ playerId: number } | null>,
+      fetch('/api/auth/me').then(r => (r.ok ? r.json() : null)) as Promise<{ playerId: number; isAdmin?: boolean } | null>,
     ]).then(([raw, session]) => {
       const data = raw.map((p) => ({ ...p, id: Number(p.id) }))
       setPlayers(data)
       if (session) {
         localStorage.setItem('golf_player_id', String(session.playerId))
         setMe(data.find(p => p.id === session.playerId) ?? null)
+        setAmAdmin(session.isAdmin === true)
       } else {
         localStorage.removeItem('golf_player_id')
+        setAmAdmin(false)
         setShowPicker(true)
       }
     })
@@ -100,8 +103,10 @@ export default function Home() {
         >
           <div>
             <div style={{ fontSize: 22, marginBottom: 4 }}>🧍</div>
-            <div className="ttl">Solo Round</div>
-            <div className="desc">Played on your own? Enter your score{me ? '' : ' — sign in first'}</div>
+            <div className="ttl">{amAdmin ? 'Enter a Score' : 'Solo Round'}</div>
+            <div className="desc">
+              {amAdmin ? 'Solo rounds — yours or any player’s (admin)' : `Played on your own? Enter your score${me ? '' : ' — sign in first'}`}
+            </div>
           </div>
           <div className="chev">›</div>
         </button>
@@ -128,6 +133,7 @@ export default function Home() {
       {showSolo && me && (
         <SoloRoundSheet
           player={me}
+          roster={amAdmin ? players : undefined}
           onSaved={() => {
             setShowSolo(false)
             setSoloSaved(true)

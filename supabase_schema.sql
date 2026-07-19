@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS players (
   id BIGSERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
+  is_admin BOOLEAN NOT NULL DEFAULT false,  -- admins may enter rounds they didn't play in
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
