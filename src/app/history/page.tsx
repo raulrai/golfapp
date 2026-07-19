@@ -83,20 +83,49 @@ function gameFromRound(r: RoundFull): Game {
   }
 }
 
+/** Indices (into the newest-first score list) of the rounds the handicap is
+ *  built from: the best 6 differentials of the last 12 — mirrors calcHandicap. */
+function countingIndices(scores: Score[]): Set<number> {
+  const window = scores.slice(0, 12).map((s, i) => ({ i, v: s.handicap_score }))
+  window.sort((a, b) => a.v - b.v)
+  return new Set(window.slice(0, Math.min(6, window.length)).map((x) => x.i))
+}
+
 export default function History() {
-  const [me, setMe] = useState<Player | null>(null)
+  const [roster, setRoster] = useState<{ id: number; name: string }[]>([])
+  const [myId, setMyId] = useState<number | null>(null)
+  const [amAdmin, setAmAdmin] = useState(false)
+  const [viewedId, setViewedId] = useState<number | null>(null)
+  const [player, setPlayer] = useState<Player | null>(null)
   const [loading, setLoading] = useState(true)
   const [editId, setEditId] = useState<number | null>(null)
   const [viewId, setViewId] = useState<number | null>(null)
 
-  const load = useCallback(() => {
-    const id = localStorage.getItem('golf_player_id')
-    if (!id) { setLoading(false); return }
-    return fetch(`/api/players/${id}`).then(r => r.json()).then(data => {
-      setMe(data)
-      setLoading(false)
+  // Who am I + the roster (once)
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/auth/me').then(r => (r.ok ? r.json() : null)) as Promise<{ playerId: number; isAdmin?: boolean } | null>,
+      fetch('/api/players').then(r => r.json()) as Promise<{ id: number | string; name: string }[]>,
+    ]).then(([session, raw]) => {
+      setRoster(raw.map((p) => ({ id: Number(p.id), name: p.name })))
+      if (session) {
+        setMyId(session.playerId)
+        setAmAdmin(session.isAdmin === true)
+        setViewedId(session.playerId)
+      } else {
+        setLoading(false)
+      }
     })
   }, [])
+
+  // The viewed player's history (whenever the switcher changes)
+  const load = useCallback(() => {
+    if (viewedId === null) return
+    return fetch(`/api/players/${viewedId}`).then(r => r.json()).then(data => {
+      setPlayer(data)
+      setLoading(false)
+    })
+  }, [viewedId])
 
   useEffect(() => { load() }, [load])
 
@@ -104,39 +133,69 @@ export default function History() {
     <div className="screen"><div className="empty"><div className="muted">Loading…</div></div></div>
   )
 
-  if (!me) return (
+  if (!player || myId === null) return (
     <div className="screen">
       <div className="empty">
         <div className="big">🏌️</div>
-        <div className="rname">Select your player first</div>
-        <div className="muted">Go to Home and tap “Who am I?”</div>
+        <div className="rname">Sign in first</div>
+        <div className="muted">Go to Home and log in with your PIN</div>
       </div>
     </div>
   )
+
+  const viewingSelf = viewedId === myId
+  const canEdit = amAdmin || viewingSelf
+  const counting = countingIndices(player.scores)
 
   return (
     <div className="screen">
       <div className="topbar">
         <div className="crest">⛳ Delhi Golf Club ⛳</div>
-        <h1>{me.name}&apos;s History</h1>
+        <h1>{viewingSelf ? 'My History' : `${player.name}'s History`}</h1>
         <div className="sub">
-          {me.scores.length} rounds · HCP {me.handicap.toFixed(1)} · {me.money >= 0 ? '+' : '−'}₹{Math.abs(me.money).toLocaleString('en-IN')}
+          {player.scores.length} rounds · HCP {player.handicap.toFixed(1)} · {player.money >= 0 ? '+' : '−'}₹{Math.abs(player.money).toLocaleString('en-IN')}
         </div>
       </div>
 
       <div className="stack">
-        {me.scores.map((s, i) => {
-          const isInHandicap = i < 12
+        <select
+          value={viewedId ?? ''}
+          onChange={(e) => { setLoading(true); setViewedId(Number(e.target.value)) }}
+          style={{
+            width: '100%', boxSizing: 'border-box', background: 'var(--card)',
+            border: '1px solid var(--line)', borderRadius: 12, color: 'inherit',
+            fontSize: 15, fontWeight: 600, padding: '11px 12px', fontFamily: 'inherit',
+          }}
+        >
+          {[...roster].sort((a, b) => a.name.localeCompare(b.name)).map((p) => (
+            <option key={p.id} value={p.id}>{p.id === myId ? `${p.name} (me)` : p.name}</option>
+          ))}
+        </select>
+
+        <div className="rsub" style={{ textAlign: 'center' }}>
+          ⭐ counts toward handicap — best 6 of the last 12 rounds
+        </div>
+
+        {player.scores.map((s, i) => {
+          const isInWindow = i < 12
+          const counts = counting.has(i)
           return (
-            <div key={i} className="rowcard" style={{ opacity: isInHandicap ? 1 : 0.55 }}>
+            <div
+              key={i}
+              className="rowcard"
+              style={{
+                opacity: isInWindow ? 1 : 0.55,
+                ...(counts ? { borderColor: 'var(--gold)' } : {}),
+              }}
+            >
               <div style={{ flex: 1 }}>
                 <div className="rname" style={{ fontSize: 14 }}>
-                  {new Date(s.played_at).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                  {counts ? '⭐ ' : ''}{new Date(s.played_at).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
                 </div>
                 <div className="rsub">
                   {s.course_name ?? 'Delhi Golf Club'}
                   {s.adjusted_gross_score ? ` · Gross ${s.adjusted_gross_score}` : ''}
-                  {isInHandicap ? '' : ' · not counted'}
+                  {isInWindow ? '' : ' · outside last 12'}
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
@@ -150,7 +209,7 @@ export default function History() {
                 )}
               </div>
               <button className="view-btn" onClick={() => setViewId(s.round_id)}>Card</button>
-              <button className="edit-btn" onClick={() => setEditId(s.round_id)}>Edit</button>
+              {canEdit && <button className="edit-btn" onClick={() => setEditId(s.round_id)}>Edit</button>}
             </div>
           )
         })}
@@ -159,6 +218,8 @@ export default function History() {
       {editId !== null && (
         <EditSheet
           roundId={editId}
+          selfId={myId}
+          amAdmin={amAdmin}
           onClose={() => setEditId(null)}
           onSaved={() => { setEditId(null); load() }}
         />
@@ -172,12 +233,21 @@ export default function History() {
   )
 }
 
-function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: () => void; onSaved: () => void }) {
+function EditSheet({ roundId, selfId, amAdmin, onClose, onSaved }: {
+  roundId: number
+  selfId: number
+  amAdmin: boolean
+  onClose: () => void
+  onSaved: () => void
+}) {
   const [detail, setDetail] = useState<RoundDetail | null>(null)
   const [rows, setRows] = useState<EditRow[]>([])
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [err, setErr] = useState('')
+
+  // Non-admins may only touch their own row; the server enforces the same rule.
+  const editable = (pid: number) => amAdmin || pid === selfId
 
   useEffect(() => {
     fetch(`/api/rounds/${roundId}`).then(r => r.json()).then((d: RoundDetail) => {
@@ -195,12 +265,13 @@ function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: ()
     setRows(rs => rs.map(r => r.player_id === pid ? { ...r, [key]: val } : r))
 
   const moneyBalance = rows.reduce((acc, r) => acc + (Number(r.money) || 0), 0)
-  const valid = rows.length > 0 && rows.every(r => r.gross.trim() !== '' && Number.isFinite(Number(r.gross)) && Number(r.gross) > 0)
+  const editableRows = rows.filter(r => editable(r.player_id))
+  const valid = editableRows.length > 0 && editableRows.every(r => r.gross.trim() !== '' && Number.isFinite(Number(r.gross)) && Number(r.gross) > 0)
 
   const save = async () => {
     setSaving(true); setErr('')
     try {
-      for (const r of rows) {
+      for (const r of editableRows) {
         const res = await fetch('/api/scores', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -246,7 +317,7 @@ function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: ()
               {new Date(detail.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
               {' · '}{detail.course_name ?? 'Delhi Golf Club'}
             </div>
-            {rows.map(r => (
+            {rows.map(r => editable(r.player_id) ? (
               <div className="edit-row" key={r.player_id}>
                 <div className="edit-name">{r.player_name}</div>
                 <div className="edit-fields">
@@ -285,6 +356,15 @@ function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: ()
                   </label>
                 </div>
               </div>
+            ) : (
+              // Read-only row — someone else's score; only admins may change it.
+              <div className="edit-row" key={r.player_id} style={{ opacity: 0.6 }}>
+                <div className="edit-name">{r.player_name} 🔒</div>
+                <div className="edit-fields">
+                  <div className="edit-field"><span>Gross</span><div className="edit-input" style={{ display: 'flex', alignItems: 'center' }}>{r.gross || '—'}</div></div>
+                  <div className="edit-field"><span>Money ₹</span><div className="edit-input" style={{ display: 'flex', alignItems: 'center' }}>{r.money || '0'}</div></div>
+                </div>
+              </div>
             ))}
             <div className={`pot-line ${moneyBalance === 0 ? 'ok' : 'off'}`}>
               Money balance: {moneyBalance === 0 ? 'level ✓' : `${moneyBalance > 0 ? '+' : '−'}₹${Math.abs(moneyBalance).toLocaleString('en-IN')} (should net to zero)`}
@@ -293,9 +373,11 @@ function EditSheet({ roundId, onClose, onSaved }: { roundId: number; onClose: ()
             <button className="primary" disabled={!valid || saving || deleting} onClick={save}>
               {saving ? 'Saving…' : 'Save changes'}
             </button>
-            <button className="danger" disabled={saving || deleting} onClick={del}>
-              {deleting ? 'Deleting…' : 'Delete round'}
-            </button>
+            {amAdmin && (
+              <button className="danger" disabled={saving || deleting} onClick={del}>
+                {deleting ? 'Deleting…' : 'Delete round'}
+              </button>
+            )}
             <button className="flat" disabled={saving || deleting} onClick={onClose}>Cancel</button>
           </>
         )}

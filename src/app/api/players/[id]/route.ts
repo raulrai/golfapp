@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import sql from '@/lib/db'
 import { calcHandicap } from '@/lib/handicap'
+import { sessionPlayerId, unauthorized } from '@/lib/auth'
 
+// Any logged-in player may view any player's history — editing is enforced
+// separately (own scores only, admins excepted) in /api/scores and /api/rounds.
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  if ((await sessionPlayerId()) === null) return unauthorized()
   const { id } = await params
   const [player] = await sql`SELECT * FROM players WHERE id = ${Number(id)}`
   if (!player) return NextResponse.json({ error: 'Not found' }, { status: 404 })
