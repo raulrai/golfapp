@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import LoginSheet from '@/components/LoginSheet'
+import SoloRoundSheet from '@/components/SoloRoundSheet'
 
 type Player = { id: number; name: string; handicap: number; money: number }
 
@@ -9,6 +10,10 @@ export default function Home() {
   const [players, setPlayers] = useState<Player[]>([])
   const [me, setMe] = useState<Player | null>(null)
   const [showPicker, setShowPicker] = useState(false)
+  const [showSolo, setShowSolo] = useState(false)
+  const [soloSaved, setSoloSaved] = useState(false)
+  // bumped after a solo save so stats and the leaderboard re-fetch
+  const [refresh, setRefresh] = useState(0)
 
   useEffect(() => {
     Promise.all([
@@ -25,7 +30,7 @@ export default function Home() {
         setShowPicker(true)
       }
     })
-  }, [])
+  }, [refresh])
 
   function loggedIn(playerId: number) {
     localStorage.setItem('golf_player_id', String(playerId))
@@ -88,9 +93,28 @@ export default function Home() {
           <div className="chev">›</div>
         </Link>
 
+        <button
+          className="cta-card"
+          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+          onClick={() => (me ? setShowSolo(true) : setShowPicker(true))}
+        >
+          <div>
+            <div style={{ fontSize: 22, marginBottom: 4 }}>🧍</div>
+            <div className="ttl">Solo Round</div>
+            <div className="desc">Played on your own? Enter your score{me ? '' : ' — sign in first'}</div>
+          </div>
+          <div className="chev">›</div>
+        </button>
+
+        {soloSaved && (
+          <div className="panel" style={{ textAlign: 'center', color: 'var(--gold)', fontWeight: 600 }}>
+            Round saved ✓ — handicap updated
+          </div>
+        )}
+
         {me && <LiveNowTeaser />}
 
-        <QuickLeaderboard />
+        <QuickLeaderboard key={refresh} />
       </div>
 
       {showPicker && (
@@ -98,6 +122,19 @@ export default function Home() {
           players={players}
           onLoggedIn={loggedIn}
           onClose={me ? () => setShowPicker(false) : undefined}
+        />
+      )}
+
+      {showSolo && me && (
+        <SoloRoundSheet
+          player={me}
+          onSaved={() => {
+            setShowSolo(false)
+            setSoloSaved(true)
+            setRefresh((n) => n + 1)
+            setTimeout(() => setSoloSaved(false), 4000)
+          }}
+          onClose={() => setShowSolo(false)}
         />
       )}
     </div>
