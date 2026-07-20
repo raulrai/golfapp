@@ -12,8 +12,16 @@ export function calcHandicapScore(adjustedGross: number, coursePar: number): num
   return adjustedGross - coursePar
 }
 
-export function calcHandicap(scores: number[]): number {
-  if (scores.length === 0) return 0
+/**
+ * Mean of the best 6 of the last 12 rounds, in strokes over par.
+ *
+ * `startingHandicap` covers a player with no rounds yet: without it they read
+ * as scratch, which would hand them the back-marker slot and strokes off every
+ * genuine low handicapper. It is a seed, not an override — the moment a player
+ * posts a score their real record takes over.
+ */
+export function calcHandicap(scores: number[], startingHandicap?: number | null): number {
+  if (scores.length === 0) return startingHandicap ?? 0
   const last12 = scores.slice(0, 12)
   const sorted = [...last12].sort((a, b) => a - b)
   const count = Math.min(6, sorted.length)

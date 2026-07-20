@@ -20,7 +20,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     ORDER BY s.played_at DESC`
 
   const last12 = scores.slice(0, 12).map(s => Number(s.handicap_score))
-  const handicap = calcHandicap(last12)
+  const handicap = calcHandicap(last12, player.starting_handicap)
   const money = scores.reduce((sum, s) => sum + Number(s.money_inr), 0)
 
   return NextResponse.json({ ...player, handicap: Math.round(handicap * 100) / 100, money, scores })

@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     const scores = await sql`
       SELECT handicap_score FROM scores WHERE player_id = ${id}
       ORDER BY played_at DESC LIMIT 12`
-    const handicap = calcHandicap(scores.map(s => Number(s.handicap_score)))
+    const handicap = calcHandicap(scores.map(s => Number(s.handicap_score)), p.starting_handicap)
     return { id, name: p.name, handicap: Math.round(handicap * 100) / 100 }
   }))
 
