@@ -107,9 +107,6 @@ export async function persistFinishedRound(body: SaveBody): Promise<PersistResul
   const [course] = await sql`SELECT * FROM courses WHERE is_default = true LIMIT 1`
   if (!course) return { error: 'No default course', status: 400 }
 
-  const rating = Number(course.course_rating)
-  const slope = Number(course.slope_rating)
-
   // Hole pars for this course — needed to pro-rate a partial card to 18 holes.
   const holeRows = await sql`SELECT hole, par FROM holes WHERE course_id = ${course.id} ORDER BY hole`
   const parByHole: Record<number, number> = {}
@@ -131,7 +128,7 @@ export async function persistFinishedRound(body: SaveBody): Promise<PersistResul
       RETURNING id`
 
     for (const { p, g } of grosses) {
-      const handicap_score = calcHandicapScore(g!.gross, rating, slope)
+      const handicap_score = calcHandicapScore(g!.gross, par18)
       await tx`
         INSERT INTO round_players (round_id, player_id, stroke_allowance)
         VALUES (${round.id}, ${p.id}, ${p.strokes})`

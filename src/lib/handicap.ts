@@ -1,9 +1,15 @@
-export function calcHandicapScore(
-  adjustedGross: number,
-  courseRating: number,
-  slopeRating: number
-): number {
-  return (adjustedGross - courseRating) * 113 / slopeRating
+/**
+ * The per-round number a handicap is averaged from: strokes over par.
+ *
+ * This is the group's own long-standing convention, carried over from the
+ * Handicaps spreadsheet the app replaced — NOT the USGA slope differential
+ * `(gross − rating) × 113 / slope`. The two agree around 10 over par and
+ * diverge either side (at 5 over the differential reads ~0.6 high, at 20 over
+ * ~1.2 low), so mixing them would drift every handicap off the group's basis.
+ * Scores at other courses are adjusted by hand, as they were in the sheet.
+ */
+export function calcHandicapScore(adjustedGross: number, coursePar: number): number {
+  return adjustedGross - coursePar
 }
 
 export function calcHandicap(scores: number[]): number {

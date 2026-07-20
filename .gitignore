@@ -39,6 +39,13 @@ yarn-error.log*
 *.db-shm
 *.db-wal
 
+# DB backups written by scripts/ before a destructive run — these dump every
+# table, including player_auth PIN hashes. Never commit them.
+backup-*.json
+
+# throwaway one-off DB inspection scripts
+scripts/tmp-*
+
 # vercel
 .vercel
 
