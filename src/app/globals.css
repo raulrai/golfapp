@@ -304,6 +304,11 @@ body {
 
 /* ---- end-round sheet ---- */
 .end-note { color: var(--muted); font-size: 13px; line-height: 1.5; text-align: center; margin-bottom: 16px; }
+.end-note.warn {
+  color: var(--ink); background: rgba(224, 87, 62, 0.08);
+  border: 1px solid rgba(224, 87, 62, 0.45); border-radius: 12px; padding: 12px 14px;
+}
+.end-note.warn b { color: var(--neg); }
 
 /* ---- round result blocks (History scorecard sheet) ---- */
 .result-block { margin: 4px 0 16px; }

@@ -56,6 +56,22 @@ export interface Moment {
   ts: number
 }
 
+/** House rule: a hole-by-hole round must reach this many holes to be recorded.
+ *  At or above it the cards are pro-rated to 18 (see persistFinishedRound);
+ *  below it the whole round is discarded — no scores, no winnings. Total-only
+ *  rounds are exempt: they carry a final gross, not a hole count. */
+export const MIN_HOLES_TO_RECORD = 14
+
+/** How far the group got: holes carrying at least one player's score. The
+ *  minimum is judged for the round as a whole, not per player. */
+export function roundHolesPlayed(scores: Scores): number {
+  let played = 0
+  for (let h = 1; h <= 18; h++) {
+    if (Object.values(scores[h] ?? {}).some((s) => typeof s === 'number')) played++
+  }
+  return played
+}
+
 export const strokesById = (g: Game): Record<PlayerId, number> =>
   Object.fromEntries(g.players.map((p) => [p.id, p.strokes]))
 

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import './play.css'
 import {
   COURSE, courseOf, loadGame, saveGame, holeStrokes, effectiveMoney, playerName, holeResults,
+  roundHolesPlayed, MIN_HOLES_TO_RECORD,
 } from '@/lib/golf/game'
 import type { Game, GamePlayer, Moment } from '@/lib/golf/game'
 import type { CourseMeta, TeeColor } from '@/lib/golf/course'
@@ -835,13 +836,14 @@ function EndRoundSheet({ game, onFinish, onDiscard, onClose }: {
   const [err, setErr] = useState('')
 
   // how many holes carry at least one score, and whether the whole field is in
-  let scored = 0, complete = true
+  const scored = roundHolesPlayed(game.scores)
+  let complete = true
   for (let h = 1; h <= 18; h++) {
-    const anyone = game.players.some((p) => typeof game.scores[h]?.[p.id] === 'number')
-    if (anyone) scored++
     if (!game.players.every((p) => typeof game.scores[h]?.[p.id] === 'number')) complete = false
   }
-  const canSave = scored > 0
+  // Under the house minimum nothing is recorded, so there is nothing to save.
+  const tooShort = scored < MIN_HOLES_TO_RECORD
+  const short = MIN_HOLES_TO_RECORD - scored
 
   const save = async () => {
     setStatus('saving')
@@ -862,17 +864,30 @@ function EndRoundSheet({ game, onFinish, onDiscard, onClose }: {
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="grip" />
         <h2>End the round?</h2>
-        <div className="end-note">
-          {complete
-            ? 'All 18 holes are in.'
-            : `${scored} of 18 holes scored. Recording will pro-rate each card to 18 holes for handicaps (the strokes over par are scaled up).`}
-          {' '}This ends the round for the whole fourball.
-        </div>
-        <button className="primary" disabled={status === 'saving' || !canSave} onClick={save}>
-          {status === 'saving' ? 'Saving…' : complete ? 'Save & record' : 'Save & record (pro-rated)'}
+        {tooShort ? (
+          <div className="end-note warn">
+            ⚠ Only <b>{scored} of 18</b> holes scored. Rounds need at least{' '}
+            <b>{MIN_HOLES_TO_RECORD} holes</b> to count, so ending now records{' '}
+            <b>nothing</b> — no scores and no winnings, for anyone in the fourball.
+            {' '}Play {short} more hole{short > 1 ? 's' : ''} to have this round count.
+          </div>
+        ) : (
+          <div className="end-note">
+            {complete
+              ? 'All 18 holes are in.'
+              : `${scored} of 18 holes scored. Recording will pro-rate each card to 18 holes for handicaps (the strokes over par are scaled up).`}
+            {' '}This ends the round for the whole fourball.
+          </div>
+        )}
+        {!tooShort && (
+          <button className="primary" disabled={status === 'saving'} onClick={save}>
+            {status === 'saving' ? 'Saving…' : complete ? 'Save & record' : 'Save & record (pro-rated)'}
+          </button>
+        )}
+        <button className={tooShort ? 'primary' : 'flat'} onClick={onClose}>Keep playing</button>
+        <button className="danger" onClick={discard}>
+          {tooShort ? 'Discard round (nothing will be saved)' : 'Discard round (for everyone)'}
         </button>
-        <button className="danger" onClick={discard}>Discard round (for everyone)</button>
-        <button className="flat" onClick={onClose}>Keep playing</button>
         {status === 'error' && <div className="err-msg">⚠ {err}</div>}
       </div>
     </div>
