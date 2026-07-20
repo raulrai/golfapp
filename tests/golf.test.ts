@@ -5,7 +5,7 @@ import { strokesOnHole, fieldStrokes } from '../src/lib/golf/strokes.ts'
 import { runAutoPress, renderAutoPress, settleAutoPress, autoPressBets } from '../src/lib/golf/autopress.ts'
 import type { HoleResult } from '../src/lib/golf/autopress.ts'
 import type { Scores } from '../src/lib/golf/types.ts'
-import { holeResults } from '../src/lib/golf/game.ts'
+import { holeResults, roundHolesPlayed, MIN_HOLES_TO_RECORD } from '../src/lib/golf/game.ts'
 import type { Game } from '../src/lib/golf/game.ts'
 import { hole18Scenarios } from '../src/lib/golf/whatif.ts'
 import type { Hole18Scenario } from '../src/lib/golf/whatif.ts'
@@ -157,6 +157,28 @@ if (scenarios) {
   ok('whatif: A-wins pays A at least as much as B-wins does',
     scenarios[0].moneyToA > scenarios[2].moneyToA)
 }
+
+/* ── 14-hole minimum (house rule) ─────────────────────────────────────── */
+
+// scores for holes 1..n, two players
+const cardThru = (n: number) => Object.fromEntries(
+  Array.from({ length: n }, (_, i) => [i + 1, { 1: 4, 2: 5 }]),
+)
+
+ok('minimum is 14 holes', MIN_HOLES_TO_RECORD === 14)
+ok('holesPlayed: empty card is 0', roundHolesPlayed({}) === 0)
+ok('holesPlayed: full card is 18', roundHolesPlayed(cardThru(18)) === 18)
+ok('holesPlayed: 13 thru is 13 (below the cut)', roundHolesPlayed(cardThru(13)) === 13)
+ok('holesPlayed: 14 thru is 14 (the cut itself)', roundHolesPlayed(cardThru(14)) === 14)
+ok('holesPlayed: counts a hole with only one player scored',
+  roundHolesPlayed({ 1: { 1: 4 }, 2: { 1: 5, 2: 6 } }) === 2)
+ok('holesPlayed: skipped holes do not count',
+  roundHolesPlayed({ 1: { 1: 4 }, 5: { 1: 4 }, 12: { 1: 4 } }) === 3)
+ok('holesPlayed: an empty hole entry does not count',
+  roundHolesPlayed({ 1: { 1: 4 }, 2: {} }) === 1)
+ok('13 holes is discarded, 14 is recorded',
+  roundHolesPlayed(cardThru(13)) < MIN_HOLES_TO_RECORD
+  && roundHolesPlayed(cardThru(14)) >= MIN_HOLES_TO_RECORD)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1

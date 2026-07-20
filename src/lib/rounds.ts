@@ -1,6 +1,6 @@
 import sql from '@/lib/db'
 import { calcHandicapScore } from '@/lib/handicap'
-import { effectiveMoney } from '@/lib/golf/game'
+import { effectiveMoney, roundHolesPlayed, MIN_HOLES_TO_RECORD } from '@/lib/golf/game'
 import type { Game } from '@/lib/golf/game'
 
 type SaveScores = Record<number, Record<number, number>>
@@ -91,6 +91,18 @@ export async function persistFinishedRound(body: SaveBody): Promise<PersistResul
   const teamA = scoringMode === 'hole' ? (body.teamA ?? null) : null
   const teamB = scoringMode === 'hole' ? (body.teamB ?? null) : null
   const date = body.date ?? new Date().toISOString().split('T')[0]
+
+  // House rule: a short hole-by-hole round is discarded outright — scores and
+  // winnings both. Total-only rounds carry a final gross, so they're exempt.
+  if (scoringMode === 'hole') {
+    const played = roundHolesPlayed(scores)
+    if (played < MIN_HOLES_TO_RECORD) {
+      return {
+        error: `Only ${played} of 18 holes scored — a round needs at least ${MIN_HOLES_TO_RECORD} to be recorded.`,
+        status: 422,
+      }
+    }
+  }
 
   const [course] = await sql`SELECT * FROM courses WHERE is_default = true LIMIT 1`
   if (!course) return { error: 'No default course', status: 400 }
