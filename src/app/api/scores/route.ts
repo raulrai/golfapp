@@ -11,12 +11,12 @@ export async function POST(req: NextRequest) {
   if (Number(player_id) !== pid && !(await isAdmin(pid))) return forbidden()
 
   const [round] = await sql`
-    SELECT r.*, c.course_rating, c.slope_rating
+    SELECT r.*, c.par
     FROM rounds r JOIN courses c ON r.course_id = c.id
     WHERE r.id = ${round_id}`
   if (!round) return NextResponse.json({ error: 'Round not found' }, { status: 400 })
 
-  const handicap_score = calcHandicapScore(adjusted_gross_score, Number(round.course_rating), Number(round.slope_rating))
+  const handicap_score = calcHandicapScore(adjusted_gross_score, Number(round.par))
   const date = played_at ?? round.date
 
   const existing = await sql`SELECT id FROM scores WHERE round_id = ${round_id} AND player_id = ${player_id}`
