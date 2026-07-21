@@ -73,6 +73,16 @@ const calcHandicap = (overPars) => {
   return best.reduce((s, v) => s + v, 0) / best.length
 }
 
+// scores.handicap_score is REAL (float4, ~7 significant digits), so a sheet
+// value like 12.137254901960786 reads back as 12.13725. Comparing a DB-derived
+// handicap against the float64 sheet therefore cannot be exact — the observed
+// gap is ~5e-6, four orders of magnitude below the 1 decimal place any screen
+// shows. A tolerance of 1e-9 here reports healthy imports as failures.
+//
+// Shared players are still compared exactly (DB against DB, same column, no
+// conversion) — for them any movement at all is a real defect.
+const REAL_EPSILON = 1e-4
+
 // ---------------------------------------------------------------- classify
 
 const extract = JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -247,7 +257,7 @@ for (const name of NEW) {
   const want = calcHandicap(byName.get(name).scores.slice(0, HISTORY_DEPTH))
   check.push({ player: name, as: name,
                before: '—', after: Math.round(after * 1e6) / 1e6,
-               ok: Math.abs(after - want) < 1e-9 })
+               ok: Math.abs(after - want) < REAL_EPSILON })
 }
 console.table(check)
 
