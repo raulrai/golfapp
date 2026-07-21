@@ -108,3 +108,41 @@ CREATE TABLE IF NOT EXISTS round_moments (
   note TEXT,
   ts TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ---------------------------------------------------------------- groups
+-- The app serves two golf groups, PMT and Gazelle. One players row per HUMAN,
+-- shared across groups; membership lives in player_groups. That is what makes a
+-- score entered in one group count in the other with nothing to synchronise.
+--
+-- The rule the schema encodes: a ROUND belongs to a group, a SCORE does not.
+-- Handicaps read scores by player_id alone (global); history, money and live
+-- listings filter on rounds.group_id.
+CREATE TABLE IF NOT EXISTS groups (
+  id BIGSERIAL PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,           -- 'pmt' | 'gazelle'
+  name TEXT NOT NULL,
+  tracks_money BOOLEAN NOT NULL DEFAULT true,  -- Gazelle keeps no Order of Merit
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Membership + the group's own nickname for that player (PMT 'Gags' is Gazelle
+-- 'Gaggy'), and per-group admin rights. players.is_admin is vestigial: authority
+-- is player_groups.is_admin, so a PMT admin is not automatically a Gazelle one.
+CREATE TABLE IF NOT EXISTS player_groups (
+  player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  group_id  BIGINT NOT NULL REFERENCES groups(id)  ON DELETE CASCADE,
+  display_name TEXT NOT NULL,
+  is_admin BOOLEAN NOT NULL DEFAULT false,
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (player_id, group_id),
+  UNIQUE (group_id, display_name)
+);
+CREATE INDEX IF NOT EXISTS player_groups_group_idx ON player_groups(group_id);
+
+ALTER TABLE rounds      ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES groups(id);
+ALTER TABLE live_rounds ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES groups(id);
+CREATE INDEX IF NOT EXISTS rounds_group_date_idx        ON rounds(group_id, date DESC);
+CREATE INDEX IF NOT EXISTS live_rounds_group_status_idx ON live_rounds(group_id, status);
+
+-- players.starting_handicap seeds a player with no rounds yet (see src/lib/handicap.ts).
+ALTER TABLE players ADD COLUMN IF NOT EXISTS starting_handicap REAL;

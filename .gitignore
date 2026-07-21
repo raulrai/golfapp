@@ -52,3 +52,7 @@ scripts/tmp-*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local verification artifacts + import backups (see scripts/snapshot-handicaps.mjs)
+/.snapshots/
+/backup-before-*.json

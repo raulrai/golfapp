@@ -6,9 +6,11 @@ import { emojiForTag } from '@/lib/golf/moments'
 import type { Game, GamePlayer } from '@/lib/golf/game'
 import type { CourseMeta } from '@/lib/golf/course'
 import type { PlayerId, Scores } from '@/lib/golf/types'
+import { useTracksMoney } from '@/components/GroupProvider'
+import { apUnit } from '@/components/MatchBar'
 
-type Score = { round_id: number; handicap_score: number; played_at: string; money_inr: number; adjusted_gross_score: number | null; course_name: string | null }
-type Player = { id: number; name: string; handicap: number; money: number; scores: Score[] }
+type Score = { round_id: number; handicap_score: number; played_at: string; money_inr: number; adjusted_gross_score: number | null; course_name: string | null; group_slug: string | null; group_name: string | null; own_group: boolean }
+type Player = { id: number; name: string; handicap: number; money: number; tracksMoney?: boolean; scores: Score[] }
 
 type EditRow = { player_id: number; player_name: string; gross: string; money: string }
 type RoundDetail = {
@@ -92,6 +94,10 @@ function countingIndices(scores: Score[]): Set<number> {
 }
 
 export default function History() {
+  // Hook must sit above the early returns below. A cross-group round still counts
+  // towards the (global) handicap, so it stays in the list — labelled and dimmed,
+  // which keeps the best-6 highlight honest.
+  const tracksMoney = useTracksMoney()
   const [roster, setRoster] = useState<{ id: number; name: string }[]>([])
   const [myId, setMyId] = useState<number | null>(null)
   const [amAdmin, setAmAdmin] = useState(false)
@@ -153,7 +159,8 @@ export default function History() {
         <div className="crest">⛳ Delhi Golf Club ⛳</div>
         <h1>{viewingSelf ? 'My History' : `${player.name}'s History`}</h1>
         <div className="sub">
-          {player.scores.length} rounds · HCP {player.handicap.toFixed(1)} · {player.money >= 0 ? '+' : '−'}₹{Math.abs(player.money).toLocaleString('en-IN')}
+          {player.scores.length} rounds · HCP {player.handicap.toFixed(1)}
+          {tracksMoney && <> · {player.money >= 0 ? '+' : '−'}₹{Math.abs(player.money).toLocaleString('en-IN')}</>}
         </div>
       </div>
 
@@ -184,7 +191,7 @@ export default function History() {
               key={i}
               className="rowcard"
               style={{
-                opacity: isInWindow ? 1 : 0.55,
+                opacity: isInWindow ? (s.own_group === false ? 0.75 : 1) : 0.55,
                 ...(counts ? { borderColor: 'var(--gold)' } : {}),
               }}
             >
@@ -196,13 +203,14 @@ export default function History() {
                   {s.course_name ?? 'Delhi Golf Club'}
                   {s.adjusted_gross_score ? ` · Gross ${s.adjusted_gross_score}` : ''}
                   {isInWindow ? '' : ' · outside last 12'}
+                  {s.own_group === false && s.group_name ? ` · ${s.group_name}` : ''}
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                 <div className="rval sm gold-text">
                   {s.handicap_score >= 0 ? '+' : ''}{s.handicap_score.toFixed(1)}
                 </div>
-                {s.money_inr !== 0 && (
+                {tracksMoney && s.money_inr !== 0 && (
                   <div className={`rsub ${s.money_inr >= 0 ? 'pos' : 'neg'}`} style={{ fontWeight: 700 }}>
                     {s.money_inr >= 0 ? '+' : '−'}₹{Math.abs(s.money_inr).toLocaleString('en-IN')}
                   </div>
@@ -240,6 +248,7 @@ function EditSheet({ roundId, selfId, amAdmin, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
+  const tracksMoney = useTracksMoney()
   const [detail, setDetail] = useState<RoundDetail | null>(null)
   const [rows, setRows] = useState<EditRow[]>([])
   const [saving, setSaving] = useState(false)
@@ -328,7 +337,7 @@ function EditSheet({ roundId, selfId, amAdmin, onClose, onSaved }: {
                       onChange={e => setRow(r.player_id, 'gross', e.target.value.replace(/[^0-9]/g, ''))}
                     />
                   </label>
-                  <label className="edit-field">
+                  {tracksMoney && <label className="edit-field">
                     <span>Money ₹</span>
                     <div className="money-input-row">
                       <button
@@ -353,7 +362,7 @@ function EditSheet({ roundId, selfId, amAdmin, onClose, onSaved }: {
                         }}
                       />
                     </div>
-                  </label>
+                  </label>}
                 </div>
               </div>
             ) : (
@@ -362,13 +371,15 @@ function EditSheet({ roundId, selfId, amAdmin, onClose, onSaved }: {
                 <div className="edit-name">{r.player_name} 🔒</div>
                 <div className="edit-fields">
                   <div className="edit-field"><span>Gross</span><div className="edit-input" style={{ display: 'flex', alignItems: 'center' }}>{r.gross || '—'}</div></div>
-                  <div className="edit-field"><span>Money ₹</span><div className="edit-input" style={{ display: 'flex', alignItems: 'center' }}>{r.money || '0'}</div></div>
+                  {tracksMoney && <div className="edit-field"><span>Money ₹</span><div className="edit-input" style={{ display: 'flex', alignItems: 'center' }}>{r.money || '0'}</div></div>}
                 </div>
               </div>
             ))}
-            <div className={`pot-line ${moneyBalance === 0 ? 'ok' : 'off'}`}>
-              Money balance: {moneyBalance === 0 ? 'level ✓' : `${moneyBalance > 0 ? '+' : '−'}₹${Math.abs(moneyBalance).toLocaleString('en-IN')} (should net to zero)`}
-            </div>
+            {tracksMoney && (
+              <div className={`pot-line ${moneyBalance === 0 ? 'ok' : 'off'}`}>
+                Money balance: {moneyBalance === 0 ? 'level ✓' : `${moneyBalance > 0 ? '+' : '−'}₹${Math.abs(moneyBalance).toLocaleString('en-IN')} (should net to zero)`}
+              </div>
+            )}
             {err && <div className="pot-line off">{err}</div>}
             <button className="primary" disabled={!valid || saving || deleting} onClick={save}>
               {saving ? 'Saving…' : 'Save changes'}
@@ -388,6 +399,7 @@ function EditSheet({ roundId, selfId, amAdmin, onClose, onSaved }: {
 
 /* View a saved round: the scorecard plus the final match-play and Auto Press results. */
 function ScorecardSheet({ roundId, onClose }: { roundId: number; onClose: () => void }) {
+  const tracksMoney = useTracksMoney()
   const [round, setRound] = useState<RoundFull | null>(null)
   const [err, setErr] = useState('')
 
@@ -463,7 +475,7 @@ function ScorecardSheet({ roundId, onClose }: { roundId: number; onClose: () => 
 
             {ap && (
               <div className="result-block">
-                <h3>Auto Press · ₹{game!.stake}/match</h3>
+                <h3>Auto Press{tracksMoney ? ` · ₹${game!.stake}/match` : ''}</h3>
                 {ap.bets.map((b) => {
                   const net = b.settlement.netToA
                   const lead = net > 0 ? game!.teamA : game!.teamB
@@ -474,17 +486,17 @@ function ScorecardSheet({ roundId, onClose }: { roundId: number; onClose: () => 
                         <span className="result-kind">{b.string === '—' ? 'no result' : b.string}</span>
                       </div>
                       <span className={`result-val ${net === 0 ? 'as' : net > 0 ? 'up-a' : 'up-b'}`}>
-                        {net === 0 ? 'level' : `${shortSide(lead)} +₹${Math.abs(net * game!.stake).toLocaleString('en-IN')}`}
+                        {net === 0 ? 'level' : `${shortSide(lead)} +${apUnit(net, game!.stake, tracksMoney)}`}
                       </span>
                     </div>
                   )
                 })}
                 <div className="result-row">
                   <span className="result-who">Net</span>
-                  <span className={`result-val ${ap.moneyToA === 0 ? 'as' : ap.moneyToA > 0 ? 'up-a' : 'up-b'}`}>
-                    {ap.moneyToA === 0
+                  <span className={`result-val ${ap.netMatchesToA === 0 ? 'as' : ap.netMatchesToA > 0 ? 'up-a' : 'up-b'}`}>
+                    {ap.netMatchesToA === 0
                       ? 'level'
-                      : `${shortSide(ap.moneyToA > 0 ? game!.teamA : game!.teamB)} +₹${Math.abs(ap.moneyToA).toLocaleString('en-IN')}`}
+                      : `${shortSide(ap.netMatchesToA > 0 ? game!.teamA : game!.teamB)} +${apUnit(ap.netMatchesToA, game!.stake, tracksMoney)}`}
                   </span>
                 </div>
               </div>

@@ -1,50 +1,67 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import LoginSheet from '@/components/LoginSheet'
 import SoloRoundSheet from '@/components/SoloRoundSheet'
+import GroupSwitcherSheet from '@/components/GroupSwitcherSheet'
+import type { GroupOption } from '@/components/GroupSwitcherSheet'
 
 type Player = { id: number; name: string; handicap: number; money: number }
+type Session = {
+  playerId: number
+  displayName: string
+  isAdmin?: boolean
+  group: GroupOption | null
+  groups: GroupOption[]
+}
 
 export default function Home() {
   const [players, setPlayers] = useState<Player[]>([])
+  const [session, setSession] = useState<Session | null>(null)
   const [me, setMe] = useState<Player | null>(null)
-  const [amAdmin, setAmAdmin] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
+  const [showSwitcher, setShowSwitcher] = useState(false)
   const [showSolo, setShowSolo] = useState(false)
   const [soloSaved, setSoloSaved] = useState(false)
-  // bumped after a solo save so stats and the leaderboard re-fetch
   const [refresh, setRefresh] = useState(0)
 
+  const amAdmin = session?.isAdmin === true
+  const tracksMoney = session?.group?.tracksMoney === true
+
   useEffect(() => {
-    Promise.all([
-      fetch('/api/players').then(r => r.json()) as Promise<Player[]>,
-      fetch('/api/auth/me').then(r => (r.ok ? r.json() : null)) as Promise<{ playerId: number; isAdmin?: boolean } | null>,
-    ]).then(([raw, session]) => {
-      const data = raw.map((p) => ({ ...p, id: Number(p.id) }))
-      setPlayers(data)
-      if (session) {
-        localStorage.setItem('golf_player_id', String(session.playerId))
-        setMe(data.find(p => p.id === session.playerId) ?? null)
-        setAmAdmin(session.isAdmin === true)
-      } else {
-        localStorage.removeItem('golf_player_id')
-        setAmAdmin(false)
-        setShowPicker(true)
-      }
-    })
+    // Session first: /api/players is now group-scoped and requires auth, so
+    // there is nothing to fetch until we know who and where we are.
+    fetch('/api/auth/me')
+      .then(r => (r.ok ? r.json() : null))
+      .then(async (s: Session | null) => {
+        setSession(s)
+        if (!s) {
+          localStorage.removeItem('golf_player_id')
+          setMe(null)
+          setPlayers([])
+          setShowPicker(true)
+          return
+        }
+        localStorage.setItem('golf_player_id', String(s.playerId))
+        const raw = await fetch('/api/players').then(r => (r.ok ? r.json() : []))
+        const data = (raw as Player[]).map(p => ({ ...p, id: Number(p.id) }))
+        setPlayers(data)
+        setMe(data.find(p => p.id === s.playerId) ?? null)
+      })
   }, [refresh])
 
-  function loggedIn(playerId: number) {
-    localStorage.setItem('golf_player_id', String(playerId))
-    setMe(players.find(p => p.id === playerId) ?? null)
+  const reload = useCallback(() => setRefresh(n => n + 1), [])
+
+  function loggedIn() {
     setShowPicker(false)
+    reload()
   }
 
   async function switchPlayer() {
     await fetch('/api/auth/logout', { method: 'POST' })
     localStorage.removeItem('golf_player_id')
     setMe(null)
+    setSession(null)
     setShowPicker(true)
   }
 
@@ -56,34 +73,54 @@ export default function Home() {
           <h1>{me ? `Hello, ${me.name}` : 'Golf Tracker'}</h1>
           <div className="sub">
             {me
-              ? <>Handicap {me.handicap.toFixed(1)} · <span className={me.money >= 0 ? 'pos' : 'neg'}>{me.money >= 0 ? '+' : '−'}₹{Math.abs(me.money).toLocaleString('en-IN')}</span></>
+              ? <>
+                  Handicap {me.handicap.toFixed(1)}
+                  {tracksMoney && <> · <span className={me.money >= 0 ? 'pos' : 'neg'}>{me.money >= 0 ? '+' : '−'}₹{Math.abs(me.money).toLocaleString('en-IN')}</span></>}
+                </>
               : new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
         </div>
-        <button onClick={() => (me ? switchPlayer() : setShowPicker(true))} style={{
-          background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10,
-          color: 'var(--gold)', fontSize: 13, fontWeight: 600, padding: '7px 14px', cursor: 'pointer',
-          fontFamily: 'inherit', marginTop: 8,
-        }}>
-          {me ? 'Switch' : 'Sign in'}
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end', marginTop: 8 }}>
+          <button onClick={() => (me ? switchPlayer() : setShowPicker(true))} style={{
+            background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 10,
+            color: 'var(--gold)', fontSize: 13, fontWeight: 600, padding: '7px 14px', cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}>
+            {me ? 'Switch' : 'Sign in'}
+          </button>
+          {session?.group && (
+            <button
+              onClick={() => session.groups.length > 1 && setShowSwitcher(true)}
+              disabled={session.groups.length <= 1}
+              style={{
+                background: 'transparent', border: '1px solid var(--line)', borderRadius: 8,
+                color: 'var(--muted)', fontSize: 11, fontWeight: 600, padding: '4px 10px',
+                cursor: session.groups.length > 1 ? 'pointer' : 'default', fontFamily: 'inherit',
+              }}
+            >
+              {session.group.name}{session.groups.length > 1 ? ' ▾' : ''}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="stack">
         {me && (
-          <div className="statgrid">
+          <div className="statgrid" style={tracksMoney ? undefined : { gridTemplateColumns: '1fr' }}>
             <div className="stat">
               <div className="label">Handicap</div>
               <div className="value gold-text">{me.handicap.toFixed(1)}</div>
               <div className="sub">current index</div>
             </div>
-            <div className="stat">
-              <div className="label">Order of Merit</div>
-              <div className={`value ${me.money >= 0 ? 'pos' : 'neg'}`}>
-                {me.money >= 0 ? '+' : '−'}₹{Math.abs(me.money).toLocaleString('en-IN')}
+            {tracksMoney && (
+              <div className="stat">
+                <div className="label">Order of Merit</div>
+                <div className={`value ${me.money >= 0 ? 'pos' : 'neg'}`}>
+                  {me.money >= 0 ? '+' : '−'}₹{Math.abs(me.money).toLocaleString('en-IN')}
+                </div>
+                <div className="sub">total winnings</div>
               </div>
-              <div className="sub">total winnings</div>
-            </div>
+            )}
           </div>
         )}
 
@@ -119,14 +156,23 @@ export default function Home() {
 
         {me && <LiveNowTeaser />}
 
-        <QuickLeaderboard key={refresh} />
+        {me && tracksMoney && <QuickLeaderboard key={refresh} />}
       </div>
 
       {showPicker && (
         <LoginSheet
-          players={players}
+          initialGroup={session?.group?.slug ?? null}
           onLoggedIn={loggedIn}
           onClose={me ? () => setShowPicker(false) : undefined}
+        />
+      )}
+
+      {showSwitcher && session && (
+        <GroupSwitcherSheet
+          groups={session.groups}
+          current={session.group?.slug ?? null}
+          onSwitched={() => { setShowSwitcher(false); reload() }}
+          onClose={() => setShowSwitcher(false)}
         />
       )}
 
@@ -134,10 +180,11 @@ export default function Home() {
         <SoloRoundSheet
           player={me}
           roster={amAdmin ? players : undefined}
+          tracksMoney={tracksMoney}
           onSaved={() => {
             setShowSolo(false)
             setSoloSaved(true)
-            setRefresh((n) => n + 1)
+            reload()
             setTimeout(() => setSoloSaved(false), 4000)
           }}
           onClose={() => setShowSolo(false)}
@@ -171,8 +218,8 @@ function LiveNowTeaser() {
 
 function QuickLeaderboard() {
   const [data, setData] = useState<{ byMoney: { name: string; money: number }[] } | null>(null)
-  useEffect(() => { fetch('/api/leaderboard').then(r => r.json()).then(setData) }, [])
-  if (!data) return null
+  useEffect(() => { fetch('/api/leaderboard').then(r => (r.ok ? r.json() : null)).then(setData) }, [])
+  if (!data || data.byMoney.length === 0) return null
   return (
     <div className="panel">
       <div className="panel-head">

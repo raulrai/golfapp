@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useTracksMoney } from '@/components/GroupProvider'
 
 const NAV = [
   { href: '/', label: 'Home', icon: '⛳' },
@@ -14,6 +15,9 @@ const NAV = [
 
 export default function BottomNav() {
   const path = usePathname()
+  const tracksMoney = useTracksMoney()
+  // Gazelle has no Order of Merit, so no Money tab.
+  const nav = tracksMoney ? NAV : NAV.filter((n) => n.href !== '/leaderboard')
   return (
     <nav style={{
       position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
@@ -23,7 +27,7 @@ export default function BottomNav() {
       display: 'flex',
       paddingBottom: 'env(safe-area-inset-bottom)',
     }}>
-      {NAV.map(n => {
+      {nav.map(n => {
         const active = path === n.href || (n.href !== '/' && path.startsWith(n.href + '/'))
         return (
           <Link key={n.href} href={n.href} style={{

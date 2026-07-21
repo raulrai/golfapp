@@ -1,28 +1,59 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-export type RosterPlayer = { id: number; name: string; handicap: number }
+export type RosterPlayer = { id: number; name: string; hasPin?: boolean }
+type GroupOption = { slug: string; name: string }
 
-/** Two-step login: pick your name, then your 4-digit PIN (first use sets it). */
-export default function LoginSheet({ players, onLoggedIn, onClose }: {
-  players: RosterPlayer[]
+/**
+ * Three-step login: pick your group, pick your name, enter your PIN.
+ *
+ * The group step comes first because the roster is group-scoped — you can only
+ * log in as a name that belongs to the group you picked. It is skipped when a
+ * group is already selected (a returning user with a golf_group cookie, or a
+ * logged-in player switching accounts within their group).
+ *
+ * The roster here comes from the public /api/groups/[slug]/roster endpoint,
+ * which carries names and nothing else — no handicaps, no money.
+ */
+export default function LoginSheet({ initialGroup, onLoggedIn, onClose }: {
+  initialGroup?: string | null
   onLoggedIn: (playerId: number) => void
   onClose?: () => void
 }) {
+  const [groups, setGroups] = useState<GroupOption[]>([])
+  const [group, setGroup] = useState<string | null>(initialGroup ?? null)
+  const [players, setPlayers] = useState<RosterPlayer[] | null>(null)
   const [picked, setPicked] = useState<RosterPlayer | null>(null)
   const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  useEffect(() => {
+    if (group) return
+    fetch('/api/groups').then(r => r.json()).then(setGroups).catch(() => setError('Could not load groups'))
+  }, [group])
+
+  // Keyed by group so a slow response for the group you just navigated away from
+  // can't land in the list you're now looking at.
+  useEffect(() => {
+    if (!group) return
+    let live = true
+    fetch(`/api/groups/${group}/roster`)
+      .then(r => r.json())
+      .then((d: { players: RosterPlayer[] }) => { if (live) setPlayers(d.players ?? []) })
+      .catch(() => { if (live) setError('Could not load the roster') })
+    return () => { live = false }
+  }, [group])
+
   async function submit(pinValue: string) {
-    if (!picked || busy) return
+    if (!picked || !group || busy) return
     setBusy(true)
     setError(null)
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId: Number(picked.id), pin: pinValue }),
+        body: JSON.stringify({ playerId: Number(picked.id), pin: pinValue, groupSlug: group }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -44,25 +75,49 @@ export default function LoginSheet({ players, onLoggedIn, onClose }: {
     if (digits.length === 4) submit(digits)
   }
 
+  const groupName = groups.find(g => g.slug === group)?.name ?? group
+
   return (
     <div className="sheet-bg" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="grip" />
-        {!picked ? (
+
+        {!group ? (
           <>
-            <h2>Who are you?</h2>
-            {[...players].sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-              <button key={p.id} onClick={() => { setPicked(p); setPin(''); setError(null) }}>
-                <span>{p.name}</span>
-                <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>HCP {p.handicap.toFixed(1)}</span>
+            <h2>Which group?</h2>
+            {groups.map(g => (
+              <button key={g.slug} onClick={() => { setGroup(g.slug); setError(null) }}>
+                <span>{g.name}</span>
+                <span className="muted" style={{ fontSize: 20, fontWeight: 400 }}>›</span>
               </button>
             ))}
+            {error && <p className="neg" style={{ margin: '10px 0 0', fontSize: 14 }}>{error}</p>}
+          </>
+        ) : !picked ? (
+          <>
+            <h2>Who are you?</h2>
+            <p className="muted" style={{ margin: '4px 0 12px', fontSize: 14 }}>{groupName}</p>
+            {players === null
+              ? <p className="muted" style={{ fontSize: 14 }}>Loading…</p>
+              : players.map(p => (
+                  <button key={p.id} onClick={() => { setPicked(p); setPin(''); setError(null) }}>
+                    <span>{p.name}</span>
+                  </button>
+                ))}
+            {!initialGroup && (
+              <button className="flat" style={{ marginTop: 12 }}
+                onClick={() => { setPlayers(null); setGroup(null); setError(null) }}>
+                ‹ Not {groupName}? Pick another group
+              </button>
+            )}
           </>
         ) : (
           <>
             <h2>Hi {picked.name}</h2>
             <p className="muted" style={{ margin: '4px 0 12px', fontSize: 14 }}>
-              Enter your 4-digit PIN. First time here? The PIN you type now becomes yours.
+              {picked.hasPin
+                ? 'Enter your 4-digit PIN.'
+                : 'Enter your 4-digit PIN. First time here? The PIN you type now becomes yours.'}
             </p>
             <input
               autoFocus

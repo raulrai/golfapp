@@ -14,6 +14,7 @@ import MomentSheet from '@/components/MomentSheet'
 import MatchBar from '@/components/MatchBar'
 import LoginSheet from '@/components/LoginSheet'
 import WhatIfSheet from '@/components/WhatIfSheet'
+import { useTracksMoney } from '@/components/GroupProvider'
 import { emojiForTag, isStoryTag } from '@/lib/golf/moments'
 import { TEES, DEFAULT_TEE, teeInfo, withTee } from '@/lib/golf/course'
 import { fieldStrokes, strokesOnHole } from '@/lib/golf/strokes'
@@ -28,6 +29,7 @@ type Me = { playerId: number; name: string }
 
 export default function PlayPage() {
   const router = useRouter()
+  const tracksMoney = useTracksMoney()
   const [me, setMe] = useState<Me | null | undefined>(undefined)
   const [roster, setRoster] = useState<RosterPlayer[]>([])
   const [course, setCourse] = useState<CourseMeta>(COURSE)
@@ -152,15 +154,7 @@ export default function PlayPage() {
           <div className="total-hint" style={{ textAlign: 'center', marginTop: 20 }}>
             Sign in to score a round.
           </div>
-          {roster.length > 0 && (
-            <LoginSheet
-              players={roster}
-              onLoggedIn={(pid) => {
-                const p = roster.find((r) => r.id === pid)
-                setMe({ playerId: pid, name: p?.name ?? '' })
-              }}
-            />
-          )}
+          <LoginSheet onLoggedIn={() => window.location.reload()} />
         </>
       ) : liveId !== null ? (
         !game ? (
@@ -170,7 +164,7 @@ export default function PlayPage() {
         ) : live.status === 'finished' ? (
           <div className="save-card">
             <div className="setup-label">Round saved</div>
-            <div className="saved-msg">✓ Saved — handicaps &amp; money updated</div>
+            <div className="saved-msg">✓ Saved — handicaps{tracksMoney ? ' & money' : ''} updated</div>
             <button
               className="cta"
               onClick={() => { saveLiveRoundId(null); router.push('/') }}
@@ -222,6 +216,9 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
   const [format, setFormat] = useState<Format | null>(null)
   const [teamA, setTeamA] = useState<number[]>([])
   const [stake, setStake] = useState(200)
+  // A non-money group keeps Auto Press but settles it in matches won, so there
+  // is no stake to pick and none to store.
+  const tracksMoney = useTracksMoney()
 
   useEffect(() => {
     fetch('/api/players')
@@ -288,7 +285,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
       allowancePct,
       format: needFormat ? format! : 'match',
       teamA: a, teamB: b, singles,
-      stake,
+      stake: tracksMoney ? stake : 0,
       scores: {},
       course: withTee(course, tee),
       tee,
@@ -406,7 +403,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
         </div>
       )}
 
-      {mode === 'hole' && (format === 'autopress' || format === 'both') && (
+      {tracksMoney && mode === 'hole' && (format === 'autopress' || format === 'both') && (
         <div className="setup-step">
           <div className="setup-label">Stake · ₹ per Auto Press match</div>
           <div className="seg cols-3">
@@ -783,8 +780,10 @@ function SaveSection({ game, onFinish }: {
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [err, setErr] = useState('')
   const money = effectiveMoney(game)
+  const tracksMoney = useTracksMoney()
   const showMoney =
-    game.scoringMode === 'total' || game.format === 'autopress' || game.format === 'both'
+    tracksMoney &&
+    (game.scoringMode === 'total' || game.format === 'autopress' || game.format === 'both')
 
   const save = async () => {
     setStatus('saving')
@@ -811,7 +810,7 @@ function SaveSection({ game, onFinish }: {
         </div>
       )}
       {status === 'saved' ? (
-        <div className="saved-msg">✓ Saved — handicaps &amp; money updated</div>
+        <div className="saved-msg">✓ Saved — handicaps{tracksMoney ? ' & money' : ''} updated</div>
       ) : (
         <button className="cta" disabled={status === 'saving'} onClick={save}>
           {status === 'saving' ? 'Saving…' : 'Save Round'}
@@ -902,6 +901,7 @@ function TotalEntry({ game, mutate, onFinish, onDiscard }: {
   onFinish: () => Promise<{ roundId: number } | { error: string }>
   onDiscard: () => Promise<{ ok: boolean; error?: string }>
 }) {
+  const tracksMoney = useTracksMoney()
   // a player's total lives under a synthetic hole 0
   const setTotal = (pid: PlayerId, v: number | null) =>
     mutate({ op: 'score', hole: 0, playerId: pid, strokes: v })
@@ -919,8 +919,14 @@ function TotalEntry({ game, mutate, onFinish, onDiscard }: {
 
   return (
     <div>
-      <div className="setup-label" style={{ marginTop: 10 }}>Final score &amp; winnings</div>
-      <div className="total-hint">Enter each player&apos;s gross total and their winnings (₹). No match play or Auto Press — this just updates handicaps and money.</div>
+      <div className="setup-label" style={{ marginTop: 10 }}>
+        {tracksMoney ? 'Final score & winnings' : 'Final score'}
+      </div>
+      <div className="total-hint">
+        {tracksMoney
+          ? 'Enter each player’s gross total and their winnings (₹). No match play or Auto Press — this just updates handicaps and money.'
+          : 'Enter each player’s gross total. No match play or Auto Press — this just updates handicaps.'}
+      </div>
       {ranked.map(({ p, total, net }, i) => (
         <div className="score-card" key={p.id}>
           <div className="prow">
@@ -942,7 +948,7 @@ function TotalEntry({ game, mutate, onFinish, onDiscard }: {
                 onChange={(e) => setTotal(p.id, e.target.value ? Number(e.target.value) : null)}
               />
             </label>
-            <label className="total-field">
+            {tracksMoney && <label className="total-field">
               <span>Winnings ₹</span>
               <div className="money-input-row">
                 <button
@@ -974,14 +980,16 @@ function TotalEntry({ game, mutate, onFinish, onDiscard }: {
                   }}
                 />
               </div>
-            </label>
+            </label>}
           </div>
         </div>
       ))}
 
-      <div className={`pot-balance ${balance === 0 ? 'level' : 'off'}`}>
-        Pot balance: {balance === 0 ? 'level ✓' : `${balance > 0 ? '+' : '−'}₹${Math.abs(balance).toLocaleString('en-IN')} — winnings don't net to zero (you can still save)`}
-      </div>
+      {tracksMoney && (
+        <div className={`pot-balance ${balance === 0 ? 'level' : 'off'}`}>
+          Pot balance: {balance === 0 ? 'level ✓' : `${balance > 0 ? '+' : '−'}₹${Math.abs(balance).toLocaleString('en-IN')} — winnings don't net to zero (you can still save)`}
+        </div>
+      )}
 
       {allIn ? (
         <>

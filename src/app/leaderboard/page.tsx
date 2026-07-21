@@ -1,17 +1,28 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useTracksMoney } from '@/components/GroupProvider'
 
 type Player = { id: number; name: string; handicap: number; money: number; rounds: number }
 
 export default function Leaderboard() {
   const [players, setPlayers] = useState<Player[]>([])
   const [myId, setMyId] = useState<number | null>(null)
+  const tracksMoney = useTracksMoney()
+  const router = useRouter()
 
   useEffect(() => {
+    // A group with no Order of Merit has no page here. The API returns an empty
+    // byMoney for them regardless, so this redirect is convenience, not the gate.
+    if (!tracksMoney) { router.replace('/handicaps'); return }
     const id = localStorage.getItem('golf_player_id')
     if (id) setMyId(Number(id))
-    fetch('/api/leaderboard').then(r => r.json()).then(data => setPlayers(data.byMoney))
-  }, [])
+    fetch('/api/leaderboard')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => setPlayers(data?.byMoney ?? []))
+  }, [tracksMoney, router])
+
+  if (!tracksMoney) return null
 
   const total = players.reduce((s, p) => s + Math.abs(p.money), 0)
 

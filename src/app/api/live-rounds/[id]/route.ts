@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
-import { sessionPlayerId, unauthorized, forbidden } from '@/lib/auth'
+import { requireGroupMember, isErr, isMemberOf, sessionPlayerId, unauthorized, forbidden } from '@/lib/auth'
 import type { LiveOp } from '@/lib/live'
 
 /** Poll endpoint. Pass ?v=<known version>: unchanged rounds return a tiny
  *  { changed: false } payload; otherwise the full game comes back. */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if ((await sessionPlayerId()) === null) return unauthorized()
+  const session = await requireGroupMember()
+  if (isErr(session)) return session
   const { id } = await params
   const [row] = await sql`
-    SELECT game, status, version, round_id FROM live_rounds WHERE id = ${Number(id)}`
+    SELECT game, status, version, round_id, group_id FROM live_rounds WHERE id = ${Number(id)}`
   if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (Number(row.group_id) !== session.group.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
   const version = Number(row.version)
   const v = req.nextUrl.searchParams.get('v')
@@ -34,10 +38,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const liveId = Number(id)
 
-  const [round] = await sql`SELECT player_ids, status FROM live_rounds WHERE id = ${liveId}`
+  const [round] = await sql`SELECT player_ids, status, group_id FROM live_rounds WHERE id = ${liveId}`
   if (!round) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const memberIds = (round.player_ids as (number | string)[]).map(Number)
   if (!memberIds.includes(pid)) return forbidden()
+  // Belt and braces: fourball membership already implies the group, but a stale
+  // client shouldn't be able to drive the other group's card either.
+  if (!(await isMemberOf(pid, Number(round.group_id)))) return forbidden()
 
   const op = (await req.json()) as LiveOp
   let rows: { version: string | number }[]
