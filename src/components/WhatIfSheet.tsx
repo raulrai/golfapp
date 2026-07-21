@@ -1,12 +1,14 @@
 'use client'
 import { hole18Scenarios } from '@/lib/golf/whatif'
 import type { Game } from '@/lib/golf/game'
-import { shortSide } from '@/components/MatchBar'
+import { shortSide, apUnit } from '@/components/MatchBar'
+import { useTracksMoney } from '@/components/GroupProvider'
 
 /** After the 17th hole: what each possible 18th-hole result does to the
- *  Auto Press money. Shown automatically once, reopenable from the match bar. */
+ *  Auto Press standings. Shown automatically once, reopenable from the match bar. */
 export default function WhatIfSheet({ game, onClose }: { game: Game; onClose: () => void }) {
   const scenarios = hole18Scenarios(game)
+  const tracksMoney = useTracksMoney()
   if (!scenarios) return null
 
   const label = (outcome: 'A' | 'H' | 'B') =>
@@ -18,8 +20,8 @@ export default function WhatIfSheet({ game, onClose }: { game: Game; onClose: ()
         <div className="grip" />
         <h2>The 18th decides</h2>
         <div className="end-note">
-          17 holes in — here&apos;s where the Auto Press money lands on every possible finish
-          (front 9 is already settled). @ ₹{game.stake}/match.
+          17 holes in — here&apos;s where the Auto Press {tracksMoney ? 'money' : 'matches'} land on every
+          possible finish (front 9 is already settled).{tracksMoney ? ` @ ₹${game.stake}/match.` : ''}
         </div>
         {scenarios.map((s) => (
           <div key={s.outcome} className="ap-block" style={{ marginBottom: 14 }}>
@@ -33,16 +35,16 @@ export default function WhatIfSheet({ game, onClose }: { game: Game; onClose: ()
                 <span className={`ap-money ${b.settlement.netToA === 0 ? 'as' : b.settlement.netToA > 0 ? 'up-a' : 'up-b'}`}>
                   {b.settlement.netToA === 0
                     ? 'level'
-                    : `${shortSide(game, b.settlement.netToA > 0 ? game.teamA : game.teamB)} ₹${Math.abs(b.settlement.netToA * game.stake).toLocaleString('en-IN')}`}
+                    : `${shortSide(game, b.settlement.netToA > 0 ? game.teamA : game.teamB)} ${apUnit(b.settlement.netToA, game.stake, tracksMoney)}`}
                 </span>
               </div>
             ))}
             <div className="mline" style={{ marginTop: 4 }}>
               <span className="mkind">Net</span>
-              <span className={`mstat ${s.moneyToA === 0 ? 'as' : s.moneyToA > 0 ? 'up-a' : 'up-b'}`} style={{ fontWeight: 800 }}>
-                {s.moneyToA === 0
-                  ? 'all square — no money moves'
-                  : `${shortSide(game, s.moneyToA > 0 ? game.teamA : game.teamB)} collect ₹${Math.abs(s.moneyToA).toLocaleString('en-IN')}`}
+              <span className={`mstat ${s.netMatchesToA === 0 ? 'as' : s.netMatchesToA > 0 ? 'up-a' : 'up-b'}`} style={{ fontWeight: 800 }}>
+                {s.netMatchesToA === 0
+                  ? `all square — nothing ${tracksMoney ? 'moves' : 'in it'}`
+                  : `${shortSide(game, s.netMatchesToA > 0 ? game.teamA : game.teamB)} collect ${apUnit(s.netMatchesToA, game.stake, tracksMoney)}`}
               </span>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import sql from '@/lib/db'
+import type { Group } from '@/lib/auth'
 import { calcHandicapScore } from '@/lib/handicap'
 import { effectiveMoney, roundHolesPlayed, MIN_HOLES_TO_RECORD } from '@/lib/golf/game'
 import type { Game } from '@/lib/golf/game'
@@ -82,12 +83,20 @@ export type PersistResult =
 
 /** Write a finished round into rounds/round_players/scores/hole_scores/round_moments,
  *  in one transaction. The single save pipeline for both the legacy client save
- *  and the live-round finish. */
-export async function persistFinishedRound(body: SaveBody): Promise<PersistResult> {
-  const { scoringMode, players, scores, money = {}, handicap_pct = 75 } = body
+ *  and the live-round finish.
+ *
+ *  `group` decides two things, and both are enforced HERE rather than in the UI:
+ *  the round is stamped with group.id, and when the group does not track money
+ *  every money_inr is forced to 0. Hiding the money fields in the client is
+ *  cosmetic; this is what makes "Gazelle tracks no money" actually true. */
+export async function persistFinishedRound(body: SaveBody, group: Group): Promise<PersistResult> {
+  const { scoringMode, players, scores, handicap_pct = 75 } = body
+  const money = group.tracksMoney ? (body.money ?? {}) : {}
   // Only hole-by-hole rounds carry a recomputable match; total-only rounds don't.
   const format = scoringMode === 'hole' ? (body.format ?? null) : null
-  const stake = scoringMode === 'hole' ? (body.stake ?? null) : null
+  // A non-money group still plays Auto Press — it just settles in matches won,
+  // so the stake is meaningless and stored as 0 rather than a phantom rupee rate.
+  const stake = scoringMode === 'hole' ? (group.tracksMoney ? (body.stake ?? null) : 0) : null
   const teamA = scoringMode === 'hole' ? (body.teamA ?? null) : null
   const teamB = scoringMode === 'hole' ? (body.teamB ?? null) : null
   const date = body.date ?? new Date().toISOString().split('T')[0]
@@ -122,9 +131,9 @@ export async function persistFinishedRound(body: SaveBody): Promise<PersistResul
 
   const roundId = await sql.begin(async (tx) => {
     const [round] = await tx`
-      INSERT INTO rounds (date, course_id, handicap_pct, format, stake, team_a, team_b)
+      INSERT INTO rounds (date, course_id, handicap_pct, format, stake, team_a, team_b, group_id)
       VALUES (${date}, ${course.id}, ${handicap_pct}, ${format}, ${stake},
-              ${teamA as number[] | null}, ${teamB as number[] | null})
+              ${teamA as number[] | null}, ${teamB as number[] | null}, ${group.id})
       RETURNING id`
 
     for (const { p, g } of grosses) {

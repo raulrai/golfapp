@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
-import { calcHandicap, calcStrokeAllowances } from '@/lib/handicap'
-import { sessionPlayerId, unauthorized } from '@/lib/auth'
+import { calcStrokeAllowances } from '@/lib/handicap'
+import { handicapFor } from '@/lib/handicap-db'
+import { requireGroupMember, isErr, allMembersOf } from '@/lib/auth'
 
 export async function GET() {
+  const session = await requireGroupMember()
+  if (isErr(session)) return session
+
+  // Rounds are group-scoped — this is the listing side of the asymmetry.
   const rounds = await sql`
     SELECT r.*, c.name as course_name, c.course_rating, c.slope_rating
     FROM rounds r LEFT JOIN courses c ON r.course_id = c.id
+    WHERE r.group_id = ${session.group.id}
     ORDER BY r.date DESC LIMIT 50`
 
   const result = await Promise.all(rounds.map(async r => {
@@ -25,26 +31,28 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  if ((await sessionPlayerId()) === null) return unauthorized()
+  const session = await requireGroupMember()
+  if (isErr(session)) return session
   const { date, course_id, handicap_pct, player_ids } = await req.json()
 
   const [course] = await sql`SELECT * FROM courses WHERE id = ${course_id}`
   if (!course) return NextResponse.json({ error: 'Course not found' }, { status: 400 })
+  if (!(await allMembersOf(player_ids as number[], session.group.id))) {
+    return NextResponse.json({ error: 'Some players are not in this group' }, { status: 400 })
+  }
 
   const players = await Promise.all((player_ids as number[]).map(async id => {
     const [p] = await sql`SELECT * FROM players WHERE id = ${id}`
-    const scores = await sql`
-      SELECT handicap_score FROM scores WHERE player_id = ${id}
-      ORDER BY played_at DESC LIMIT 12`
-    const handicap = calcHandicap(scores.map(s => Number(s.handicap_score)), p.starting_handicap)
+    // Global handicap — deliberately not group-filtered.
+    const handicap = await handicapFor(id, p.starting_handicap)
     return { id, name: p.name, handicap }
   }))
 
   const withStrokes = calcStrokeAllowances(players, handicap_pct ?? 75)
 
   const [round] = await sql`
-    INSERT INTO rounds (date, course_id, handicap_pct)
-    VALUES (${date}, ${course_id}, ${handicap_pct ?? 75})
+    INSERT INTO rounds (date, course_id, handicap_pct, group_id)
+    VALUES (${date}, ${course_id}, ${handicap_pct ?? 75}, ${session.group.id})
     RETURNING id`
 
   await Promise.all(withStrokes.map(p =>

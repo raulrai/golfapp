@@ -6,6 +6,21 @@ import { verifySessionToken } from '@/lib/pin'
 export const SESSION_COOKIE = 'golf_session'
 export const SESSION_MAX_AGE_S = 365 * 24 * 60 * 60
 
+/**
+ * The picked group (PMT or Gazelle), as a slug.
+ *
+ * THIS COOKIE CARRIES NO AUTHORITY — IT SELECTS A VIEW.
+ *
+ * It is deliberately not folded into the signed session token, because the group
+ * picker runs BEFORE login and a signed token cannot express "a group is chosen
+ * but nobody is authenticated yet". Editing this cookie by hand gains a
+ * non-member nothing: requireGroupMember() re-reads player_groups on every
+ * request and 403s. Do not "optimise" that check away by trusting this value.
+ */
+export const GROUP_COOKIE = 'golf_group'
+
+export type Group = { id: number; slug: string; name: string; tracksMoney: boolean }
+
 /** The logged-in player's id from the session cookie, or null. */
 export async function sessionPlayerId(): Promise<number | null> {
   const secret = process.env.AUTH_SECRET
@@ -23,10 +38,90 @@ export function forbidden(): NextResponse {
   return NextResponse.json({ error: 'Not allowed' }, { status: 403 })
 }
 
-/** Admins may act on rounds they didn't play in (e.g. filing someone else's card). */
-export async function isAdmin(playerId: number): Promise<boolean> {
-  const [row] = await sql`SELECT is_admin FROM players WHERE id = ${playerId}`
+/** The group named by the golf_group cookie, if it exists. No membership check. */
+export async function currentGroup(): Promise<Group | null> {
+  const slug = (await cookies()).get(GROUP_COOKIE)?.value
+  if (!slug) return null
+  return groupBySlug(slug)
+}
+
+export async function groupBySlug(slug: string): Promise<Group | null> {
+  const [g] = await sql`SELECT id, slug, name, tracks_money FROM groups WHERE slug = ${slug}`
+  return g ? { id: Number(g.id), slug: g.slug, name: g.name, tracksMoney: g.tracks_money } : null
+}
+
+/** The group a round or live round is filed under. Used on write paths where
+ *  authority and money rules must follow the ROUND's group, not the viewer's. */
+export async function groupById(id: number): Promise<Group | null> {
+  const [g] = await sql`SELECT id, slug, name, tracks_money FROM groups WHERE id = ${id}`
+  return g ? { id: Number(g.id), slug: g.slug, name: g.name, tracksMoney: g.tracks_money } : null
+}
+
+/**
+ * Group-scoped admin rights.
+ *
+ * Reads player_groups ONLY. There is deliberately no `OR players.is_admin`
+ * fallback: Poky is a global admin from the single-group era and a Gazelle
+ * member, but he is explicitly NOT a Gazelle admin. A convenience fallback
+ * would promote him silently — nothing would error. players.is_admin is
+ * retained for one release for grant-admin.mjs, but it is no longer an
+ * authorization input.
+ */
+export async function isAdminOf(playerId: number, groupId: number): Promise<boolean> {
+  const [row] = await sql`
+    SELECT is_admin FROM player_groups WHERE player_id = ${playerId} AND group_id = ${groupId}`
   return row?.is_admin === true
+}
+
+export type GroupSession = {
+  playerId: number
+  group: Group
+  isAdmin: boolean
+  displayName: string
+}
+
+/**
+ * The gate every group-scoped route handler calls: who you are, which group you
+ * are viewing, and proof you actually belong to it. One query does all three.
+ */
+export async function requireGroupMember(): Promise<GroupSession | NextResponse> {
+  const playerId = await sessionPlayerId()
+  if (playerId === null) return unauthorized()
+  const slug = (await cookies()).get(GROUP_COOKIE)?.value
+  if (!slug) return NextResponse.json({ error: 'No group selected' }, { status: 400 })
+  const [row] = await sql`
+    SELECT g.id, g.slug, g.name, g.tracks_money, pg.is_admin, pg.display_name
+    FROM groups g
+    JOIN player_groups pg ON pg.group_id = g.id AND pg.player_id = ${playerId}
+    WHERE g.slug = ${slug}`
+  if (!row) return forbidden()
+  return {
+    playerId,
+    group: { id: Number(row.id), slug: row.slug, name: row.name, tracksMoney: row.tracks_money },
+    isAdmin: row.is_admin === true,
+    displayName: row.display_name,
+  }
+}
+
+/** Narrowing helper: `if (isErr(s)) return s` at the top of a handler. */
+export function isErr(v: GroupSession | NextResponse): v is NextResponse {
+  return v instanceof NextResponse
+}
+
+/** Is this player a member of this group? */
+export async function isMemberOf(playerId: number, groupId: number): Promise<boolean> {
+  const rows = await sql`
+    SELECT 1 FROM player_groups WHERE player_id = ${playerId} AND group_id = ${groupId}`
+  return rows.length > 0
+}
+
+/** Are all of these players members of this group? Guards every round write. */
+export async function allMembersOf(playerIds: number[], groupId: number): Promise<boolean> {
+  if (playerIds.length === 0) return true
+  const [row] = await sql`
+    SELECT COUNT(*) c FROM player_groups
+    WHERE group_id = ${groupId} AND player_id = ANY(${playerIds})`
+  return Number(row.c) === new Set(playerIds).size
 }
 
 /** Is this player one of the live round's fourball? (Edit rights are fourball-wide.) */

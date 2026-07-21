@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import sql from '@/lib/db'
-import { sessionPlayerId, unauthorized, forbidden, isAdmin } from '@/lib/auth'
+import { requireGroupMember, isErr, sessionPlayerId, unauthorized, forbidden, isAdminOf } from '@/lib/auth'
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
-  if ((await sessionPlayerId()) === null) return unauthorized()
+  const session = await requireGroupMember()
+  if (isErr(session)) return session
   const { id } = await params
 
   const [round] = await sql`
@@ -11,6 +12,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     FROM rounds r LEFT JOIN courses c ON r.course_id = c.id
     WHERE r.id = ${Number(id)}`
   if (!round) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // A round is group-scoped: 404 rather than 403, so the other group's round ids
+  // aren't probeable.
+  if (Number(round.group_id) !== session.group.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
   const players = await sql`
     SELECT rp.player_id, p.name, rp.stroke_allowance
@@ -46,9 +52,13 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const pid = await sessionPlayerId()
   if (pid === null) return unauthorized()
-  // Deleting wipes every player's scores for the round — admins only.
-  if (!(await isAdmin(pid))) return forbidden()
   const { id } = await params
+
+  const [round] = await sql`SELECT id, group_id FROM rounds WHERE id = ${Number(id)}`
+  if (!round) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Deleting wipes every player's scores for the round — admins of THAT round's
+  // group only. Note this is deliberately not the currently-selected group.
+  if (!(await isAdminOf(pid, Number(round.group_id)))) return forbidden()
 
   // scores, round_players and hole_scores all cascade on round_id.
   const deleted = await sql`DELETE FROM rounds WHERE id = ${Number(id)} RETURNING id`

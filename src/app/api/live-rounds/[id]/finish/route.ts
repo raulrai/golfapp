@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
-import { sessionPlayerId, unauthorized, forbidden } from '@/lib/auth'
+import { sessionPlayerId, unauthorized, forbidden, groupById } from '@/lib/auth'
 import { gameToSaveBody, persistFinishedRound } from '@/lib/rounds'
 import type { Game } from '@/lib/golf/game'
 
@@ -13,9 +13,14 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
   const { id } = await params
   const liveId = Number(id)
 
-  const [round] = await sql`SELECT player_ids, status, round_id FROM live_rounds WHERE id = ${liveId}`
+  const [round] = await sql`SELECT player_ids, status, round_id, group_id FROM live_rounds WHERE id = ${liveId}`
   if (!round) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (!(round.player_ids as (number | string)[]).map(Number).includes(pid)) return forbidden()
+
+  // The saved round is filed under the group the live round was STARTED in —
+  // not whatever group the finishing phone happens to have selected.
+  const group = await groupById(Number(round.group_id))
+  if (!group) return NextResponse.json({ error: 'Round has no group' }, { status: 500 })
 
   // Already done? Answer idempotently so the second phone's Save resolves cleanly.
   if (round.status === 'finished') return NextResponse.json({ roundId: Number(round.round_id) })
@@ -32,7 +37,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
   }
 
   try {
-    const result = await persistFinishedRound(gameToSaveBody(claimed[0].game as Game))
+    const result = await persistFinishedRound(gameToSaveBody(claimed[0].game as Game), group)
     if ('error' in result) {
       await sql`
         UPDATE live_rounds SET status = 'live', version = version + 1, updated_at = NOW()

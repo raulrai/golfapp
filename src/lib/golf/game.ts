@@ -196,7 +196,10 @@ export function liveAutoPress(g: Game): LiveAutoPress {
     bets,
     netMatchesToA,
     moneyToA,
-    leader: moneyToA === 0 ? null : moneyToA > 0 ? g.teamA : g.teamB,
+    // Derived from matches, not money: a group that doesn't bet plays with a
+    // stake of 0, which would make every lead look level if this read moneyToA.
+    // Sign-identical to the money for any positive stake.
+    leader: netMatchesToA === 0 ? null : netMatchesToA > 0 ? g.teamA : g.teamB,
     thru: results.length,
   }
 }

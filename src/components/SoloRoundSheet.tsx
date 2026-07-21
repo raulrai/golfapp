@@ -15,10 +15,12 @@ const labelStyle: React.CSSProperties = {
 /** Enter a round you played on your own: gross total + optional winnings.
  *  Saves as a 1-player total-mode round — updates handicap (and money if given).
  *  Admins get a picker and can file the round for any player. */
-export default function SoloRoundSheet({ player, roster, onSaved, onClose }: {
+export default function SoloRoundSheet({ player, roster, tracksMoney = true, onSaved, onClose }: {
   player: { id: number; name: string }
   /** When set (admin only), the score can be entered for any of these players. */
   roster?: { id: number; name: string }[]
+  /** Gazelle keeps no Order of Merit, so it gets no winnings field. */
+  tracksMoney?: boolean
   onSaved: (roundId: number) => void
   onClose: () => void
 }) {
@@ -68,7 +70,9 @@ export default function SoloRoundSheet({ player, roster, onSaved, onClose }: {
         <div className="grip" />
         <h2>{roster ? 'Enter a score' : `Solo round · ${player.name}`}</h2>
         <p className="muted" style={{ margin: '4px 0 2px', fontSize: 14, textAlign: 'center' }}>
-          {roster ? 'As admin you can file this for any player.' : 'Your 18-hole gross counts towards your handicap. Winnings are optional.'}
+          {roster
+            ? 'As admin you can file this for any player.'
+            : `Your 18-hole gross counts towards your handicap.${tracksMoney ? ' Winnings are optional.' : ''}`}
         </p>
 
         {roster && (
@@ -98,30 +102,34 @@ export default function SoloRoundSheet({ player, roster, onSaved, onClose }: {
           style={inputStyle}
         />
 
-        <label style={labelStyle}>Winnings ₹ (optional)</label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            className={`sign-toggle ${lost ? 'neg' : 'pos'}`}
-            aria-label="Toggle won / lost"
-            disabled={busy}
-            onClick={() => setLost((v) => !v)}
-            style={{
-              width: 52, flex: 'none', background: 'var(--card)', border: '1px solid var(--line)',
-              borderRadius: 12, fontSize: 22, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            {lost ? '−' : '+'}
-          </button>
-          <input
-            inputMode="numeric"
-            placeholder="leave blank if none"
-            value={money}
-            disabled={busy}
-            onChange={(e) => setMoney(e.target.value.replace(/\D/g, ''))}
-            style={{ ...inputStyle, textAlign: 'center' }}
-          />
-        </div>
+        {tracksMoney && (
+          <>
+            <label style={labelStyle}>Winnings ₹ (optional)</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className={`sign-toggle ${lost ? 'neg' : 'pos'}`}
+                aria-label="Toggle won / lost"
+                disabled={busy}
+                onClick={() => setLost((v) => !v)}
+                style={{
+                  width: 52, flex: 'none', background: 'var(--card)', border: '1px solid var(--line)',
+                  borderRadius: 12, fontSize: 22, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {lost ? '−' : '+'}
+              </button>
+              <input
+                inputMode="numeric"
+                placeholder="leave blank if none"
+                value={money}
+                disabled={busy}
+                onChange={(e) => setMoney(e.target.value.replace(/\D/g, ''))}
+                style={{ ...inputStyle, textAlign: 'center' }}
+              />
+            </div>
+          </>
+        )}
 
         <label style={labelStyle}>Date</label>
         <input

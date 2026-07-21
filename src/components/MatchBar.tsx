@@ -1,12 +1,22 @@
 'use client'
 import { liveMatches, liveAutoPress, playerName } from '@/lib/golf/game'
+import { useTracksMoney } from '@/components/GroupProvider'
 import type { Game } from '@/lib/golf/game'
 import type { PlayerId } from '@/lib/golf/types'
 
 export const shortSide = (game: Game, side: PlayerId[]) =>
   side.map((id) => playerName(game, id).split(' ')[0]).join('&')
 
+/** Auto Press settles in matches. A money group prices those matches at the
+ *  stake; a non-money group (Gazelle) shows the matches themselves, which is
+ *  the same information without a phantom ₹0. */
+export const apUnit = (matches: number, stake: number, tracksMoney: boolean) =>
+  tracksMoney
+    ? `₹${Math.abs(matches * stake).toLocaleString('en-IN')}`
+    : `${Math.abs(matches)} match${Math.abs(matches) === 1 ? '' : 'es'}`
+
 export default function MatchBar({ game, children }: { game: Game; children?: React.ReactNode }) {
+  const tracksMoney = useTracksMoney()
   const showMatch = game.format === 'match' || game.format === 'both'
   const showAp = game.format === 'autopress' || game.format === 'both'
   const matches = showMatch ? liveMatches(game) : []
@@ -39,10 +49,10 @@ export default function MatchBar({ game, children }: { game: Game; children?: Re
               {ap.thru === 0
                 ? 'starts at hole 1'
                 : ap.leader
-                  ? `${shortSide(game, ap.leader)} leads ₹${Math.abs(ap.moneyToA).toLocaleString('en-IN')}`
+                  ? `${shortSide(game, ap.leader)} leads ${apUnit(ap.netMatchesToA, game.stake, tracksMoney)}`
                   : 'all square'}
             </span>
-            <span className="mstat">@ ₹{game.stake}/match</span>
+            {tracksMoney && <span className="mstat">@ ₹{game.stake}/match</span>}
           </div>
           {ap.bets.map((b) => (
             <div className="ap-bet" key={b.key}>
@@ -51,7 +61,7 @@ export default function MatchBar({ game, children }: { game: Game; children?: Re
               <span className={`ap-money ${b.settlement.netToA === 0 ? 'as' : b.settlement.netToA > 0 ? 'up-a' : 'up-b'}`}>
                 {b.settlement.netToA === 0
                   ? 'level'
-                  : `${shortSide(game, b.settlement.netToA > 0 ? game.teamA : game.teamB)} ₹${Math.abs(b.settlement.netToA * game.stake).toLocaleString('en-IN')}`}
+                  : `${shortSide(game, b.settlement.netToA > 0 ? game.teamA : game.teamB)} ${apUnit(b.settlement.netToA, game.stake, tracksMoney)}`}
               </span>
             </div>
           ))}
