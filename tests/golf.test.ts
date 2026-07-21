@@ -4,8 +4,12 @@ import { computeMatch } from '../src/lib/golf/matchplay.ts'
 import { strokesOnHole, fieldStrokes } from '../src/lib/golf/strokes.ts'
 import { runAutoPress, renderAutoPress, settleAutoPress, autoPressBets } from '../src/lib/golf/autopress.ts'
 import type { HoleResult } from '../src/lib/golf/autopress.ts'
+import { isGuest, maxGuestsFor } from '../src/lib/golf/types.ts'
 import type { Scores } from '../src/lib/golf/types.ts'
-import { holeResults, roundHolesPlayed, MIN_HOLES_TO_RECORD } from '../src/lib/golf/game.ts'
+import {
+  holeResults, roundHolesPlayed, MIN_HOLES_TO_RECORD,
+  playerMoney, memberPlayers, guestPlayers,
+} from '../src/lib/golf/game.ts'
 import type { Game } from '../src/lib/golf/game.ts'
 import { hole18Scenarios } from '../src/lib/golf/whatif.ts'
 import type { Hole18Scenario } from '../src/lib/golf/whatif.ts'
@@ -179,6 +183,62 @@ ok('holesPlayed: an empty hole entry does not count',
 ok('13 holes is discarded, 14 is recorded',
   roundHolesPlayed(cardThru(13)) < MIN_HOLES_TO_RECORD
   && roundHolesPlayed(cardThru(14)) >= MIN_HOLES_TO_RECORD)
+
+/* ── Guests (negative ids) ────────────────────────────────────────────── */
+
+// The whole guest design rests on the engine being id-agnostic: a guest is an
+// ordinary player whose id happens to be negative. These fixtures pin that down,
+// because if it ever stopped being true the guest feature would silently rot.
+
+ok('isGuest: negative ids are guests', isGuest(-1) && isGuest(-2))
+ok('isGuest: real player ids are not', !isGuest(1) && !isGuest(47))
+ok('maxGuestsFor: 2 in a fourball, 1 in a 2-ball',
+  maxGuestsFor(4) === 2 && maxGuestsFor(2) === 1)
+
+// A guest can be the field's low marker and set everyone else's strokes.
+const gStrokes = fieldStrokes([{ handicap: 14 }, { handicap: 6 }], 75)
+ok('fieldStrokes: a guest low marker plays off scratch', gStrokes[1] === 0)
+ok('fieldStrokes: the member then receives 75% of 8 = 6', gStrokes[0] === 6)
+
+// The same fourball played twice — once all members, once with a guest in the
+// same seat off the same handicap — must settle identically.
+const fourball = (ids: [number, number, number, number]): Scores => {
+  const s: Scores = {}
+  for (const h of holes) s[h.n] = { [ids[0]]: 4, [ids[1]]: 5, [ids[2]]: 5, [ids[3]]: 5 }
+  s[1] = { [ids[0]]: 3, [ids[1]]: 5, [ids[2]]: 5, [ids[3]]: 5 }
+  s[2] = { [ids[0]]: 5, [ids[1]]: 5, [ids[2]]: 3, [ids[3]]: 5 }
+  return s
+}
+const gameOf = (ids: [number, number, number, number]): Game => ({
+  id: 'g', createdAt: 0,
+  players: ids.map((id) => ({ id, name: `P${id}`, handicap: 10, strokes: 0 })),
+  scoringMode: 'hole', format: 'both', allowancePct: 75,
+  teamA: [ids[0], ids[1]], teamB: [ids[2], ids[3]],
+  singles: [[ids[0], ids[2]], [ids[1], ids[3]]],
+  stake: 200, scores: fourball(ids),
+  course: DELHI_LODHI_BLUE,
+})
+const allMembers = gameOf([1, 2, 3, 4])
+const withGuest = gameOf([1, 2, 3, -1])   // seat 4 is a guest
+
+ok('guest fourball: hole results match the all-member equivalent',
+  JSON.stringify(holeResults(withGuest)) === JSON.stringify(holeResults(allMembers)))
+ok('guest fourball: Auto Press settles identically',
+  JSON.stringify(autoPressBets(holeResults(withGuest)).map((b) => b.settlement))
+  === JSON.stringify(autoPressBets(holeResults(allMembers)).map((b) => b.settlement)))
+
+// A guest's money must net against their partner's, not vanish into a stray key.
+const gMoney = playerMoney(withGuest)
+ok('guest fourball: money keys cover the whole field',
+  Object.keys(gMoney).length === 4 && typeof gMoney[-1] === 'number')
+ok('guest fourball: the pot still nets to zero',
+  Object.values(gMoney).reduce((a, b) => a + b, 0) === 0)
+ok('guest fourball: no NaN in the settlement',
+  Object.values(gMoney).every((v) => Number.isFinite(v)))
+
+ok('memberPlayers/guestPlayers split the field',
+  memberPlayers(withGuest).length === 3 && guestPlayers(withGuest).length === 1
+  && guestPlayers(withGuest)[0].id === -1)
 
 console.log(`\n${pass} passed, ${fail} failed`)
 if (fail > 0) process.exitCode = 1

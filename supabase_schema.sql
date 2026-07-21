@@ -38,8 +38,13 @@ CREATE TABLE IF NOT EXISTS rounds (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   format TEXT,
   stake INTEGER,
+  -- No FK on the array elements, which is what lets a guest's negative id sit
+  -- in a side and still resolve when History rebuilds the match.
   team_a BIGINT[],
-  team_b BIGINT[]
+  team_b BIGINT[],
+  -- Guests (negative ids) have no players row, so their whole card lives here
+  -- rather than in round_players/scores/hole_scores. NULL when no guests played.
+  guests JSONB
 );
 
 CREATE TABLE IF NOT EXISTS round_players (

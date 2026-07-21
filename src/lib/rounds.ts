@@ -2,6 +2,7 @@ import sql from '@/lib/db'
 import type { Group } from '@/lib/auth'
 import { calcHandicapScore } from '@/lib/handicap'
 import { effectiveMoney, roundHolesPlayed, MIN_HOLES_TO_RECORD } from '@/lib/golf/game'
+import { isGuest } from '@/lib/golf/types'
 import type { Game } from '@/lib/golf/game'
 
 type SaveScores = Record<number, Record<number, number>>
@@ -9,6 +10,19 @@ type SaveScores = Record<number, Record<number, number>>
 export interface SavePlayer {
   id: number
   strokes: number
+  /** carried for guests (negative ids), who have no players row to read a name
+   *  or handicap from. Ignored for members. */
+  name?: string
+  handicap?: number
+}
+
+/** A round's guest snapshot, stored whole in rounds.guests. Guests have no
+ *  players row, so this is the only record that they played. */
+export interface GuestBlob {
+  players: { id: number; name: string; handicap: number; strokes: number }[]
+  scores: Record<number, Record<number, number>>
+  money: Record<number, number>
+  gross: Record<number, { adjusted: number; holesPlayed: number }>
 }
 
 export interface SaveMoment {
@@ -45,7 +59,9 @@ export function gameToSaveBody(game: Game): SaveBody {
     stake: game.stake,
     teamA: game.teamA,
     teamB: game.teamB,
-    players: game.players.map((p) => ({ id: p.id, strokes: p.strokes })),
+    players: game.players.map((p) => ({
+      id: p.id, strokes: p.strokes, name: p.name, handicap: p.handicap,
+    })),
     scores: game.scores,
     money: effectiveMoney(game),
     moments: (game.moments ?? []).map((m) => ({
@@ -88,7 +104,12 @@ export type PersistResult =
  *  `group` decides two things, and both are enforced HERE rather than in the UI:
  *  the round is stamped with group.id, and when the group does not track money
  *  every money_inr is forced to 0. Hiding the money fields in the client is
- *  cosmetic; this is what makes "Gazelle tracks no money" actually true. */
+ *  cosmetic; this is what makes "Gazelle tracks no money" actually true.
+ *
+ *  Guests (negative ids) are split out here: they get no round_players/scores/
+ *  hole_scores rows — they have no players row to reference — and are written
+ *  instead as one rounds.guests JSONB snapshot. Their cards still count for the
+ *  match, so History rebuilds the full field from that blob before recomputing. */
 export async function persistFinishedRound(body: SaveBody, group: Group): Promise<PersistResult> {
   const { scoringMode, players, scores, handicap_pct = 75 } = body
   const money = group.tracksMoney ? (body.money ?? {}) : {}
@@ -123,20 +144,51 @@ export async function persistFinishedRound(body: SaveBody, group: Group): Promis
   const par18 = holeRows.reduce((a, r) => a + Number(r.par), 0)
 
   // A player needs at least one scorable hole; partial cards are pro-rated above.
+  // Guests are graded exactly like members here — a guest with an empty card is
+  // as much a broken round as a member with one.
   const grosses = players.map((p) => ({ p, g: adjustedGross(scores, p.id, scoringMode, parByHole, par18) }))
   const incomplete = grosses.filter((x) => x.g === null).map((x) => x.p.id)
   if (incomplete.length) {
     return { error: 'No scores for some players', status: 400, players: incomplete }
   }
 
+  // The split: members become rows, guests become one JSONB snapshot.
+  const memberGrosses = grosses.filter((x) => !isGuest(x.p.id))
+  const guestGrosses = grosses.filter((x) => isGuest(x.p.id))
+
+  let guestBlob: GuestBlob | null = null
+  if (guestGrosses.length) {
+    const blob: GuestBlob = {
+      players: guestGrosses.map(({ p }) => ({
+        id: p.id, name: p.name ?? 'Guest', handicap: p.handicap ?? 0, strokes: p.strokes,
+      })),
+      scores: {},
+      money: {},
+      gross: {},
+    }
+    for (const { p, g } of guestGrosses) {
+      blob.gross[p.id] = { adjusted: g!.gross, holesPlayed: g!.holesPlayed }
+      // Same rule as members: a group that doesn't track money records none.
+      blob.money[p.id] = money[p.id] ?? 0
+      if (scoringMode === 'hole') {
+        for (let h = 1; h <= 18; h++) {
+          const s = scores[h]?.[p.id]
+          if (typeof s === 'number') (blob.scores[h] ??= {})[p.id] = s
+        }
+      }
+    }
+    guestBlob = blob
+  }
+
   const roundId = await sql.begin(async (tx) => {
     const [round] = await tx`
-      INSERT INTO rounds (date, course_id, handicap_pct, format, stake, team_a, team_b, group_id)
+      INSERT INTO rounds (date, course_id, handicap_pct, format, stake, team_a, team_b, group_id, guests)
       VALUES (${date}, ${course.id}, ${handicap_pct}, ${format}, ${stake},
-              ${teamA as number[] | null}, ${teamB as number[] | null}, ${group.id})
+              ${teamA as number[] | null}, ${teamB as number[] | null}, ${group.id},
+              ${guestBlob ? sql.json(guestBlob as never) : null})
       RETURNING id`
 
-    for (const { p, g } of grosses) {
+    for (const { p, g } of memberGrosses) {
       const handicap_score = calcHandicapScore(g!.gross, par18)
       await tx`
         INSERT INTO round_players (round_id, player_id, stroke_allowance)

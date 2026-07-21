@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
 import { requireGroupMember, isErr, allMembersOf } from '@/lib/auth'
+import { isGuest, maxGuestsFor } from '@/lib/golf/types'
 import type { Game } from '@/lib/golf/game'
 
 /** This group's live rounds (any member may watch). Rounds idle for 18h+ are
@@ -32,14 +33,25 @@ export async function POST(req: NextRequest) {
   const { playerId: pid, group } = session
 
   const { game } = (await req.json()) as { game?: Game }
+  // player_ids does double duty: it is the permission list (who may drive this
+  // card) AND the scoring-target list (whose score may be set). Guests belong in
+  // the second but not the first, so both go in and every check splits on sign.
   const playerIds = (game?.players ?? []).map((p) => Number(p.id))
-  if (!game || playerIds.length < 2 || playerIds.some((id) => !Number.isInteger(id))) {
+  const memberIds = playerIds.filter((id) => !isGuest(id))
+  const guestIds = playerIds.filter((id) => isGuest(id))
+
+  if (!game || playerIds.length < 2 || playerIds.some((id) => !Number.isInteger(id) || id === 0)) {
     return NextResponse.json({ error: 'Bad game payload' }, { status: 400 })
   }
-  if (!playerIds.includes(pid)) {
+  if (guestIds.length > maxGuestsFor(playerIds.length) || new Set(guestIds).size !== guestIds.length) {
+    return NextResponse.json({ error: 'Too many guests for this field' }, { status: 400 })
+  }
+  // Members only — a guest id can never be the caller, and this check is also
+  // what guarantees a real member is on the card (allMembersOf([]) is true).
+  if (!memberIds.includes(pid)) {
     return NextResponse.json({ error: 'You are not in this fourball' }, { status: 403 })
   }
-  if (!(await allMembersOf(playerIds, group.id))) {
+  if (!(await allMembersOf(memberIds, group.id))) {
     return NextResponse.json({ error: 'Some players are not in this group' }, { status: 400 })
   }
 

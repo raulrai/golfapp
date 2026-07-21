@@ -235,6 +235,13 @@ body {
   font-size: 12px; font-weight: 700; white-space: nowrap;
 }
 .sc-table thead .sc-name { color: var(--gold); }
+/* Guests keep no history, so the card says so rather than leaving an
+   unfamiliar name to be puzzled over months later. */
+.sc-table .sc-guest {
+  margin-left: 4px; padding: 0 3px; border-radius: 3px;
+  background: var(--board); border: 1px solid var(--gold); color: var(--gold);
+  font-size: 8px; font-weight: 800; vertical-align: middle;
+}
 .sc-sub, .sc-tot {
   width: 30px; font-weight: 700; background: rgba(0, 0, 0, .14);
 }

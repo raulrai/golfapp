@@ -18,6 +18,7 @@ import { useTracksMoney } from '@/components/GroupProvider'
 import { emojiForTag, isStoryTag } from '@/lib/golf/moments'
 import { TEES, DEFAULT_TEE, teeInfo, withTee } from '@/lib/golf/course'
 import { fieldStrokes, strokesOnHole } from '@/lib/golf/strokes'
+import { isGuest, maxGuestsFor } from '@/lib/golf/types'
 import type { Format, PlayerId, ScoringMode } from '@/lib/golf/types'
 import { useLiveRound, loadLiveRoundId, saveLiveRoundId } from '@/lib/useLiveRound'
 import type { LiveOp, LiveRoundSummary } from '@/lib/live'
@@ -195,7 +196,7 @@ export default function PlayPage() {
           {(joinable.length === 0 || showSetup) && (
             <>
               {startErr && <div className="err-msg">⚠ {startErr}</div>}
-              <Setup course={course} onStart={startRound} />
+              <Setup course={course} onStart={startRound} meId={me?.playerId ?? null} />
             </>
           )}
         </>
@@ -206,10 +207,19 @@ export default function PlayPage() {
 
 /* ───────────────────────── Setup ───────────────────────── */
 
-function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => void }) {
+/** A guest seat in setup: a name and a handicap typed on the spot. The negative
+ *  id is what marks them a guest everywhere downstream (see isGuest). */
+interface GuestSeat { id: number; name: string; handicap: number }
+
+function Setup({ course, onStart, meId }: {
+  course: CourseMeta
+  onStart: (g: Game) => void
+  meId: number | null
+}) {
   const [roster, setRoster] = useState<RosterPlayer[]>([])
   const [count, setCount] = useState<2 | 4 | null>(null)
   const [picked, setPicked] = useState<number[]>([])
+  const [guests, setGuests] = useState<GuestSeat[]>([])
   const [tee, setTee] = useState<TeeColor>(DEFAULT_TEE)
   const [allowancePct, setAllowancePct] = useState(75)
   const [mode, setMode] = useState<ScoringMode | null>(null)
@@ -231,14 +241,37 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
       .catch(() => setRoster([]))
   }, [])
 
+  // Members fill the seats guests haven't taken.
+  const maxGuests = count ? maxGuestsFor(count) : 0
+  const seatsForMembers = (count ?? 0) - guests.length
+
   const togglePick = (id: number) => {
     setPicked((cur) => {
       if (cur.includes(id)) return cur.filter((x) => x !== id)
-      if (count && cur.length >= count) return cur
+      if (count && cur.length >= seatsForMembers) return cur
       return [...cur, id]
     })
     setTeamA((cur) => cur.filter((x) => x !== id))
   }
+
+  const addGuest = () => {
+    if (!count || guests.length >= maxGuests) return
+    // Ids are assigned from a counter, not the array length, so removing and
+    // re-adding a guest can never collide with a seat already on the card.
+    const nextId = Math.min(0, ...guests.map((g) => g.id)) - 1
+    setGuests((cur) => [...cur, { id: nextId, name: '', handicap: 18 }])
+    // A new guest takes a seat — drop the most recent member pick if the field
+    // is already full, rather than silently exceeding the count.
+    setPicked((cur) => (cur.length > count - guests.length - 1 ? cur.slice(0, -1) : cur))
+  }
+
+  const removeGuest = (id: number) => {
+    setGuests((cur) => cur.filter((g) => g.id !== id))
+    setTeamA((cur) => cur.filter((x) => x !== id))
+  }
+
+  const setGuestField = (id: number, patch: Partial<GuestSeat>) =>
+    setGuests((cur) => cur.map((g) => (g.id === id ? { ...g, ...patch } : g)))
 
   const toggleTeamA = (id: number) => {
     setTeamA((cur) => {
@@ -248,32 +281,50 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
     })
   }
 
+  // The field in play order: members as picked, then guests. fieldStrokes is
+  // positional, so this exact array is what gets mapped over in start().
+  const field = [
+    ...picked.map((id) => roster.find((r) => r.id === id)!).filter(Boolean),
+    ...guests.map((g) => ({ id: g.id, name: g.name.trim(), handicap: g.handicap })),
+  ]
+
+  const guestNames = guests.map((g) => g.name.trim().toLowerCase()).filter(Boolean)
+  const guestsValid =
+    guests.every((g) => g.name.trim().length > 0 && Number.isFinite(g.handicap)) &&
+    new Set(guestNames).size === guests.length
+  // The server rejects a card you're not on; with guests taking seats that's now
+  // easy to hit by accident, so say so here instead of failing at Start.
+  const meOnCard = meId === null || picked.includes(meId)
+
+  const fieldFull = count !== null && field.length === count
   const needTeams = count === 4
   const teamsReady = !needTeams || teamA.length === 2
   const needFormat = mode === 'hole'
   const ready =
     count !== null &&
-    picked.length === count &&
+    field.length === count &&
+    guestsValid &&
+    meOnCard &&
     mode !== null &&
     (!needFormat || format !== null) &&
     teamsReady
 
   const start = () => {
     if (!ready || count === null) return
-    const chosen = picked.map((id) => roster.find((r) => r.id === id)!).filter(Boolean)
-    const strokes = fieldStrokes(chosen, allowancePct)
-    const players: GamePlayer[] = chosen.map((p, i) => ({
+    const strokes = fieldStrokes(field, allowancePct)
+    const players: GamePlayer[] = field.map((p, i) => ({
       id: p.id, name: p.name, handicap: p.handicap, strokes: strokes[i],
     }))
+    const ids = players.map((p) => p.id)
 
     let a: PlayerId[], b: PlayerId[], singles: [PlayerId, PlayerId][]
     if (count === 4) {
       a = teamA
-      b = picked.filter((id) => !teamA.includes(id))
+      b = ids.filter((id) => !teamA.includes(id))
       singles = [[a[0], b[0]], [a[1], b[1]]]
     } else {
-      a = [picked[0]]
-      b = [picked[1]]
+      a = [ids[0]]
+      b = [ids[1]]
       singles = []
     }
 
@@ -298,7 +349,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
         <div className="setup-label">How many players</div>
         <div className="seg">
           {[2, 4].map((n) => (
-            <button key={n} className={count === n ? 'on' : ''} onClick={() => { setCount(n as 2 | 4); setPicked([]); setTeamA([]) }}>
+            <button key={n} className={count === n ? 'on' : ''} onClick={() => { setCount(n as 2 | 4); setPicked([]); setTeamA([]); setGuests([]) }}>
               {n} Players<span className="lbl-sub">{n === 2 ? 'Singles' : 'Fourball / Singles'}</span>
             </button>
           ))}
@@ -307,7 +358,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
 
       {count && (
         <div className="setup-step">
-          <div className="setup-label">Who&rsquo;s playing · pick {count} ({picked.length}/{count})</div>
+          <div className="setup-label">Who&rsquo;s playing · pick {count} ({field.length}/{count})</div>
           <div className="roster">
             {roster.map((p) => (
               <button key={p.id} className={picked.includes(p.id) ? 'on' : ''} onClick={() => togglePick(p.id)}>
@@ -316,17 +367,58 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
               </button>
             ))}
           </div>
+
+          {guests.map((g) => (
+            <div key={g.id} className="guest-row">
+              <span className="guest-chip">G</span>
+              <input
+                className="guest-name"
+                type="text"
+                placeholder="Guest name"
+                value={g.name}
+                onChange={(e) => setGuestField(g.id, { name: e.target.value })}
+              />
+              <input
+                className="guest-hcp"
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                aria-label="Guest handicap"
+                value={Number.isFinite(g.handicap) ? g.handicap : ''}
+                onChange={(e) => setGuestField(g.id, { handicap: Number(e.target.value) })}
+              />
+              <button className="guest-x" aria-label="Remove guest" onClick={() => removeGuest(g.id)}>×</button>
+            </div>
+          ))}
+
+          {guests.length < maxGuests && (
+            <button className="guest-add" onClick={addGuest}>+ Add guest</button>
+          )}
+          {guests.length > 0 && (
+            <div className="hcp-note">
+              Guests play the round and count for the match, but keep no history —
+              their scores stay on this round only, and never reach the leaderboard
+              or handicaps. Type a handicap: it sets their strokes and can change
+              everyone else&rsquo;s if they&rsquo;re the lowest in the field.
+            </div>
+          )}
+          {!meOnCard && field.length > 0 && (
+            <div className="hcp-note">You need to be on the card to start a round.</div>
+          )}
+          {guests.length > 0 && !guestsValid && (
+            <div className="hcp-note">Every guest needs a different name and a handicap.</div>
+          )}
         </div>
       )}
 
-      {count && picked.length === count && (
+      {fieldFull && (
         <div className="setup-step">
           <div className="setup-label">Course</div>
           <div className="team-col"><div className="slot filled">{course.name}</div></div>
         </div>
       )}
 
-      {count && picked.length === count && (
+      {fieldFull && (
         <div className="setup-step">
           <div className="setup-label">Tees · play from</div>
           <div className="seg cols-3">
@@ -350,7 +442,7 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
         </div>
       )}
 
-      {count && picked.length === count && (
+      {fieldFull && (
         <div className="setup-step">
           <div className="setup-label">Handicap allowance · {allowancePct}% of the difference</div>
           <input
@@ -371,18 +463,14 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
         </div>
       )}
 
-      {count && picked.length === count && (
+      {fieldFull && (
         <div className="setup-step">
           <div className="setup-label">Stroking · who gets shots</div>
-          <StrokePreview
-            players={picked.map((id) => roster.find((r) => r.id === id)!).filter(Boolean)}
-            course={course}
-            allowancePct={allowancePct}
-          />
+          <StrokePreview players={field} course={course} allowancePct={allowancePct} />
         </div>
       )}
 
-      {count && picked.length === count && (
+      {fieldFull && (
         <div className="setup-step">
           <div className="setup-label">Scoring</div>
           <div className="seg">
@@ -420,23 +508,27 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
           <div className="team-pick">
             <div className="team-col">
               <h4>Team A</h4>
-              {picked.filter((id) => teamA.includes(id)).map((id) => (
-                <div key={id} className="slot filled" onClick={() => toggleTeamA(id)}>{playerNameFrom(roster, id)}</div>
+              {field.filter((p) => teamA.includes(p.id)).map((p) => (
+                <div key={p.id} className="slot filled" onClick={() => toggleTeamA(p.id)}>
+                  {p.name}{isGuest(p.id) && <span className="guest-chip sm">G</span>}
+                </div>
               ))}
               {teamA.length < 2 && <div className="slot">tap a name below</div>}
             </div>
             <div className="team-col">
               <h4>Team B</h4>
-              {picked.filter((id) => !teamA.includes(id)).map((id) => (
-                <div key={id} className="slot filled">{playerNameFrom(roster, id)}</div>
+              {field.filter((p) => !teamA.includes(p.id)).map((p) => (
+                <div key={p.id} className="slot filled">
+                  {p.name}{isGuest(p.id) && <span className="guest-chip sm">G</span>}
+                </div>
               ))}
-              {picked.filter((id) => !teamA.includes(id)).length === 0 && <div className="slot">—</div>}
+              {field.filter((p) => !teamA.includes(p.id)).length === 0 && <div className="slot">—</div>}
             </div>
           </div>
           <div className="seg cols-4" style={{ marginTop: 8 }}>
-            {picked.map((id) => (
-              <button key={id} className={teamA.includes(id) ? 'on' : ''} onClick={() => toggleTeamA(id)}>
-                {playerNameFrom(roster, id)}
+            {field.map((p) => (
+              <button key={p.id} className={teamA.includes(p.id) ? 'on' : ''} onClick={() => toggleTeamA(p.id)}>
+                {p.name}
               </button>
             ))}
           </div>
@@ -448,7 +540,6 @@ function Setup({ course, onStart }: { course: CourseMeta; onStart: (g: Game) => 
   )
 }
 
-const playerNameFrom = (roster: RosterPlayer[], id: number) => roster.find((r) => r.id === id)?.name ?? '?'
 
 /* Per-player stroke summary shown before format is chosen. */
 function StrokePreview({
