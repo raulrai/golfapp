@@ -4,6 +4,7 @@ import Scorecard from '@/components/Scorecard'
 import { liveMatches, liveAutoPress, playerName } from '@/lib/golf/game'
 import { emojiForTag } from '@/lib/golf/moments'
 import type { Game, GamePlayer } from '@/lib/golf/game'
+import type { GuestBlob } from '@/lib/rounds'
 import type { CourseMeta } from '@/lib/golf/course'
 import type { PlayerId, Scores } from '@/lib/golf/types'
 import { useTracksMoney } from '@/components/GroupProvider'
@@ -35,21 +36,37 @@ type RoundFull = {
   holeScores: { player_id: number | string; hole: number | string; strokes: number | string }[]
   holes: { hole: number | string; par: number | string; stroke_index: number | string; yards: number | string }[]
   moments?: { hole: number | string | null; player_ids: (number | string)[] | null; tag: string; note: string | null; ts: string }[]
+  /** guests (negative ids) have no rows of their own — their whole card is here */
+  guests?: GuestBlob | null
 }
 
-/** Rebuild a Game from a saved round so the live match-play / Auto Press engine can replay it. */
+/** Rebuild a Game from a saved round so the live match-play / Auto Press engine
+ *  can replay it. Guests are merged back in from the round's snapshot: without
+ *  them a fourball played with a visitor would replay as a 1-v-1 and the result
+ *  the round was actually settled on could not be reproduced. */
 function gameFromRound(r: RoundFull): Game {
-  const players: GamePlayer[] = r.players.map((p) => ({
-    id: Number(p.player_id),
-    name: p.name,
-    handicap: 0,
-    strokes: Number(p.stroke_allowance) || 0,
-  }))
+  const guests = r.guests?.players ?? []
+  const players: GamePlayer[] = [
+    ...r.players.map((p) => ({
+      id: Number(p.player_id),
+      name: p.name,
+      handicap: 0,
+      strokes: Number(p.stroke_allowance) || 0,
+    })),
+    // handicap stays 0 as for members: the engine reads strokes, never handicap,
+    // and fieldStrokes is not re-run on replay.
+    ...guests.map((g) => ({ id: Number(g.id), name: g.name, handicap: 0, strokes: Number(g.strokes) || 0 })),
+  ]
 
   const scores: Scores = {}
   for (const hs of r.holeScores) {
     const h = Number(hs.hole)
     ;(scores[h] ??= {})[Number(hs.player_id)] = Number(hs.strokes)
+  }
+  for (const [h, byPlayer] of Object.entries(r.guests?.scores ?? {})) {
+    for (const [pid, s] of Object.entries(byPlayer)) {
+      ;(scores[Number(h)] ??= {})[Number(pid)] = Number(s)
+    }
   }
 
   const teamA = (r.team_a ?? []).map(Number)
@@ -440,6 +457,35 @@ function ScorecardSheet({ roundId, onClose }: { roundId: number; onClose: () => 
               <div className="result-note">Total-only round — no hole-by-hole card was recorded.</div>
             )}
 
+            {(round.guests?.players.length ?? 0) > 0 && (
+              <div className="result-block">
+                <h3>Guests</h3>
+                {round.guests!.players.map((g) => {
+                  const gross = round.guests!.gross?.[g.id]
+                  const won = round.guests!.money?.[g.id] ?? 0
+                  return (
+                    <div className="result-row" key={g.id}>
+                      <div>
+                        <span className="result-who">{g.name}</span>
+                        <span className="result-kind">
+                          {`h/cap ${g.handicap}`}
+                          {gross ? ` · ${gross.adjusted} gross` : ''}
+                        </span>
+                      </div>
+                      {tracksMoney && (
+                        <span className={`result-val ${won === 0 ? 'as' : won > 0 ? 'up-a' : 'up-b'}`}>
+                          {won === 0 ? 'level' : `${won > 0 ? '+' : '−'}₹${Math.abs(won)}`}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+                <div className="result-note">
+                  Guests keep no history — these scores belong to this round only.
+                </div>
+              </div>
+            )}
+
             {(() => {
               const partial = round.scores.filter((s) => s.holes_played != null && Number(s.holes_played) < 18)
               if (partial.length === 0) return null
@@ -510,8 +556,13 @@ function ScorecardSheet({ roundId, onClose }: { roundId: number; onClose: () => 
               <div className="result-block">
                 <h3>Moments</h3>
                 {round.moments!.map((m, i) => {
+                  // Resolve against the full field, guests included — otherwise a
+                  // guest's birdie silently drops out of the diary.
                   const who = (m.player_ids ?? [])
-                    .map((id) => round.players.find((p) => Number(p.player_id) === Number(id))?.name.split(' ')[0])
+                    .map((id) =>
+                      round.players.find((p) => Number(p.player_id) === Number(id))?.name.split(' ')[0]
+                      ?? round.guests?.players.find((g) => Number(g.id) === Number(id))?.name.split(' ')[0],
+                    )
                     .filter(Boolean)
                   return (
                     <div className="moment-item" key={i}>

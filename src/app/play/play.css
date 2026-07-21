@@ -74,6 +74,37 @@
 .roster button .hcp { font-size: 11px; color: var(--muted); font-weight: 700; }
 .roster button.on .hcp { color: #5a4a1e; }
 
+/* Guest seats — a visitor plays the round but keeps no history, so the card
+   marks them rather than leaving it to be inferred from an unfamiliar name. */
+.guest-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.guest-chip {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--board); border: 1px solid var(--gold); color: var(--gold);
+  font-size: 10px; font-weight: 800; letter-spacing: .5px;
+}
+.guest-chip.sm { width: 16px; height: 16px; font-size: 8px; margin-left: 6px; vertical-align: middle; }
+.guest-name, .guest-hcp {
+  background: var(--card); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 12px; padding: 12px 10px; font-size: 14px; font-weight: 600;
+  font-family: inherit; min-width: 0;
+}
+.guest-name { flex: 1; }
+.guest-hcp { flex: none; width: 66px; text-align: center; }
+.guest-name::placeholder { color: var(--muted); font-weight: 500; }
+.guest-x {
+  flex: none; width: 34px; height: 34px; border-radius: 10px;
+  background: transparent; border: 1px solid var(--line); color: var(--muted);
+  font-size: 18px; line-height: 1; cursor: pointer; font-family: inherit;
+}
+.guest-add {
+  width: 100%; margin-top: 8px; padding: 12px;
+  background: transparent; border: 1px dashed var(--line); border-radius: 12px;
+  color: var(--muted); font-size: 13px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.guest-add:hover { border-color: var(--gold); color: var(--gold); }
+
 .team-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .team-col { background: var(--board); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
 .team-col h4 { margin: 0 0 8px; color: var(--gold); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }

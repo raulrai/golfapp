@@ -4,6 +4,7 @@ import { computeMatch } from './matchplay.ts'
 import { strokesOnHole } from './strokes.ts'
 import { autoPressBets } from './autopress.ts'
 import type { HoleResult, AutoPressBet } from './autopress.ts'
+import { isGuest } from './types.ts'
 import type { Format, MatchState, PlayerId, Scores, ScoringMode } from './types.ts'
 
 /** Canonical seed / offline fallback. The DB (via /api/course) is the editable source. */
@@ -77,6 +78,11 @@ export const strokesById = (g: Game): Record<PlayerId, number> =>
 
 export const playerName = (g: Game, id: PlayerId): string =>
   g.players.find((p) => p.id === id)?.name ?? '?'
+
+/** The field split by kind. Guests are full players to the engine — this split
+ *  matters only at the persistence boundary and in the UI's guest marking. */
+export const memberPlayers = (g: Game): GamePlayer[] => g.players.filter((p) => !isGuest(p.id))
+export const guestPlayers = (g: Game): GamePlayer[] => g.players.filter((p) => isGuest(p.id))
 
 /** Strokes a given player receives on a given hole. */
 export function holeStrokes(g: Game, id: PlayerId, holeN: number): number {

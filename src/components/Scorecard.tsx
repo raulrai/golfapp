@@ -1,6 +1,7 @@
 import { courseOf } from '@/lib/golf/game'
 import type { Game } from '@/lib/golf/game'
 import type { Hole } from '@/lib/golf/course'
+import { isGuest } from '@/lib/golf/types'
 import type { PlayerId } from '@/lib/golf/types'
 
 /* Filled-out scorecard: front nine + back nine, gross coloured vs par.
@@ -61,7 +62,10 @@ function NineTable({ game, holes, label, grand }: {
           const allTot = sumGross(p.id, allHoles)
           return (
             <tr key={p.id}>
-              <th className="sc-name">{p.name.split(' ')[0]}</th>
+              <th className="sc-name">
+                {p.name.split(' ')[0]}
+                {isGuest(p.id) && <span className="sc-guest" title="Guest">G</span>}
+              </th>
               {holes.map((h) => {
                 const s = game.scores[h.n]?.[p.id]
                 const cls = typeof s === 'number' ? relClass(s - h.par) : ''

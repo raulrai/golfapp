@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
 import { requireGroupMember, isErr, isMemberOf, sessionPlayerId, unauthorized, forbidden } from '@/lib/auth'
+import { isGuest } from '@/lib/golf/types'
 import type { LiveOp } from '@/lib/live'
 
 /** Poll endpoint. Pass ?v=<known version>: unchanged rounds return a tiny
@@ -40,7 +41,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const [round] = await sql`SELECT player_ids, status, group_id FROM live_rounds WHERE id = ${liveId}`
   if (!round) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  const memberIds = (round.player_ids as (number | string)[]).map(Number)
+  // Two different lists out of one column: everyone on the card may be *scored*
+  // (guests included, negative ids), but only real members may *do* the scoring.
+  const cardIds = (round.player_ids as (number | string)[]).map(Number)
+  const memberIds = cardIds.filter((id) => !isGuest(id))
   if (!memberIds.includes(pid)) return forbidden()
   // Belt and braces: fourball membership already implies the group, but a stale
   // client shouldn't be able to drive the other group's card either.
@@ -52,7 +56,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   switch (op.op) {
     case 'score': {
       const { hole, playerId, strokes } = op
-      if (!Number.isInteger(hole) || hole < 0 || hole > 18 || !memberIds.includes(Number(playerId))) {
+      if (!Number.isInteger(hole) || hole < 0 || hole > 18 || !cardIds.includes(Number(playerId))) {
         return NextResponse.json({ error: 'Bad score op' }, { status: 400 })
       }
       if (strokes !== null && (!Number.isInteger(strokes) || strokes < 1 || strokes > 99)) {
@@ -62,6 +66,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ? await sql`
             UPDATE live_rounds
             SET game = game #- ARRAY['scores', ${String(hole)}, ${String(playerId)}],
+                -- A guest's key is "-1". scores->'<hole>' is a jsonb OBJECT, so
+                -- this deletes that key; it is not an array index. Don't "fix" it.
                 version = version + 1, updated_at = NOW()
             WHERE id = ${liveId} AND status = 'live'
             RETURNING version`
@@ -77,7 +83,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     case 'money': {
       const { playerId, amount } = op
-      if (!memberIds.includes(Number(playerId)) || (amount !== null && !Number.isInteger(amount))) {
+      if (!cardIds.includes(Number(playerId)) || (amount !== null && !Number.isInteger(amount))) {
         return NextResponse.json({ error: 'Bad money op' }, { status: 400 })
       }
       rows = amount === null
