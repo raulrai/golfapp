@@ -38,11 +38,32 @@ export function forbidden(): NextResponse {
   return NextResponse.json({ error: 'Not allowed' }, { status: 403 })
 }
 
-/** The group named by the golf_group cookie, if it exists. No membership check. */
+/**
+ * The group named by the golf_group cookie. No membership check — callers that
+ * need one use requireGroupMember().
+ *
+ * Falls back to the session player's first membership when the cookie is
+ * missing. That case is not hypothetical: every player carries a year-long
+ * golf_session cookie predating this feature, so on the first load after the
+ * multi-group deploy nobody has a group cookie yet. Without the fallback they
+ * would all land in a groupless state with no way out short of logging out.
+ */
 export async function currentGroup(): Promise<Group | null> {
   const slug = (await cookies()).get(GROUP_COOKIE)?.value
-  if (!slug) return null
-  return groupBySlug(slug)
+  if (slug) return groupBySlug(slug)
+  const playerId = await sessionPlayerId()
+  if (playerId === null) return null
+  return firstGroupOf(playerId)
+}
+
+/** A player's default group — the one they joined first. */
+export async function firstGroupOf(playerId: number): Promise<Group | null> {
+  const [g] = await sql`
+    SELECT g.id, g.slug, g.name, g.tracks_money
+    FROM groups g
+    JOIN player_groups pg ON pg.group_id = g.id AND pg.player_id = ${playerId}
+    ORDER BY g.id LIMIT 1`
+  return g ? { id: Number(g.id), slug: g.slug, name: g.name, tracksMoney: g.tracks_money } : null
 }
 
 export async function groupBySlug(slug: string): Promise<Group | null> {
@@ -88,12 +109,27 @@ export async function requireGroupMember(): Promise<GroupSession | NextResponse>
   const playerId = await sessionPlayerId()
   if (playerId === null) return unauthorized()
   const slug = (await cookies()).get(GROUP_COOKIE)?.value
-  if (!slug) return NextResponse.json({ error: 'No group selected' }, { status: 400 })
-  const [row] = await sql`
-    SELECT g.id, g.slug, g.name, g.tracks_money, pg.is_admin, pg.display_name
-    FROM groups g
-    JOIN player_groups pg ON pg.group_id = g.id AND pg.player_id = ${playerId}
-    WHERE g.slug = ${slug}`
+
+  // A cookie that names a group is taken strictly: belong to it or get 403.
+  // That is what makes the cookie safe to treat as untrusted input — editing it
+  // to another group's slug grants nothing.
+  //
+  // NO cookie is a different case, and it is the one every existing player is in
+  // on the first load after this deploy: their session cookie predates groups.
+  // Those players fall back to their own first membership, which is a lookup
+  // against player_groups and so grants nothing either.
+  const rows = slug
+    ? await sql`
+        SELECT g.id, g.slug, g.name, g.tracks_money, pg.is_admin, pg.display_name
+        FROM groups g
+        JOIN player_groups pg ON pg.group_id = g.id AND pg.player_id = ${playerId}
+        WHERE g.slug = ${slug}`
+    : await sql`
+        SELECT g.id, g.slug, g.name, g.tracks_money, pg.is_admin, pg.display_name
+        FROM groups g
+        JOIN player_groups pg ON pg.group_id = g.id AND pg.player_id = ${playerId}
+        ORDER BY g.id LIMIT 1`
+  const [row] = rows
   if (!row) return forbidden()
   return {
     playerId,
