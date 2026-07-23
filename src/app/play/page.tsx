@@ -26,6 +26,8 @@ import type { LiveOp, LiveRoundSummary } from '@/lib/live'
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
 type RosterPlayer = { id: number; name: string; handicap: number }
+/** A registered player from another group, offered as a guest-seat link. */
+type LinkablePlayer = { id: number; name: string; groups: string[]; handicap: number }
 type Me = { playerId: number; name: string }
 
 export default function PlayPage() {
@@ -207,9 +209,15 @@ export default function PlayPage() {
 
 /* ───────────────────────── Setup ───────────────────────── */
 
+/** A registered player another group owns, snapshotted onto a guest seat. */
+interface GuestLink { playerId: number; name: string; handicap: number; group: string }
+
 /** A guest seat in setup: a name and a handicap typed on the spot. The negative
- *  id is what marks them a guest everywhere downstream (see isGuest). */
-interface GuestSeat { id: number; name: string; handicap: number }
+ *  id is what marks them a guest everywhere downstream (see isGuest). When `link`
+ *  is set the seat is instead a VISITING player — a real account from another
+ *  group — and the field entry it produces carries their positive id, so their
+ *  score reaches their handicap and history like any member's. */
+interface GuestSeat { id: number; name: string; handicap: number; link?: GuestLink }
 
 function Setup({ course, onStart, meId }: {
   course: CourseMeta
@@ -217,6 +225,7 @@ function Setup({ course, onStart, meId }: {
   meId: number | null
 }) {
   const [roster, setRoster] = useState<RosterPlayer[]>([])
+  const [others, setOthers] = useState<LinkablePlayer[]>([])
   const [count, setCount] = useState<2 | 4 | null>(null)
   const [picked, setPicked] = useState<number[]>([])
   const [guests, setGuests] = useState<GuestSeat[]>([])
@@ -239,6 +248,11 @@ function Setup({ course, onStart, meId }: {
         ),
       )
       .catch(() => setRoster([]))
+    // Registered players from other groups — the pool a guest seat links to.
+    fetch('/api/players/others')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d: LinkablePlayer[]) => setOthers(d.map((p) => ({ ...p, id: Number(p.id) }))))
+      .catch(() => setOthers([]))
   }, [])
 
   // Members fill the seats guests haven't taken.
@@ -281,17 +295,26 @@ function Setup({ course, onStart, meId }: {
     })
   }
 
-  // The field in play order: members as picked, then guests. fieldStrokes is
-  // positional, so this exact array is what gets mapped over in start().
+  // The field in play order: members as picked, then guest seats. A linked seat
+  // resolves to its real (positive) player id; an unlinked one keeps its guest
+  // (negative) id. fieldStrokes is positional, so this exact array is mapped in
+  // start().
   const field = [
     ...picked.map((id) => roster.find((r) => r.id === id)!).filter(Boolean),
-    ...guests.map((g) => ({ id: g.id, name: g.name.trim(), handicap: g.handicap })),
+    ...guests.map((g) => g.link
+      ? { id: g.link.playerId, name: g.link.name, handicap: g.link.handicap }
+      : { id: g.id, name: g.name.trim(), handicap: g.handicap }),
   ]
 
-  const guestNames = guests.map((g) => g.name.trim().toLowerCase()).filter(Boolean)
+  // Only unlinked seats are graded as guests; linked seats carry a registered
+  // player's real name + handicap, so they are valid by construction.
+  const plainGuests = guests.filter((g) => !g.link)
+  const guestNames = plainGuests.map((g) => g.name.trim().toLowerCase()).filter(Boolean)
+  const linkedIds = guests.filter((g) => g.link).map((g) => g.link!.playerId)
   const guestsValid =
-    guests.every((g) => g.name.trim().length > 0 && Number.isFinite(g.handicap)) &&
-    new Set(guestNames).size === guests.length
+    plainGuests.every((g) => g.name.trim().length > 0 && Number.isFinite(g.handicap)) &&
+    new Set(guestNames).size === plainGuests.length &&
+    new Set(linkedIds).size === linkedIds.length
   // The server rejects a card you're not on; with guests taking seats that's now
   // easy to hit by accident, so say so here instead of failing at Start.
   const meOnCard = meId === null || picked.includes(meId)
@@ -369,37 +392,37 @@ function Setup({ course, onStart, meId }: {
           </div>
 
           {guests.map((g) => (
-            <div key={g.id} className="guest-row">
-              <span className="guest-chip">G</span>
-              <input
-                className="guest-name"
-                type="text"
-                placeholder="Guest name"
-                value={g.name}
-                onChange={(e) => setGuestField(g.id, { name: e.target.value })}
-              />
-              <input
-                className="guest-hcp"
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                aria-label="Guest handicap"
-                value={Number.isFinite(g.handicap) ? g.handicap : ''}
-                onChange={(e) => setGuestField(g.id, { handicap: Number(e.target.value) })}
-              />
-              <button className="guest-x" aria-label="Remove guest" onClick={() => removeGuest(g.id)}>×</button>
-            </div>
+            <GuestSeatRow
+              key={g.id}
+              seat={g}
+              others={others}
+              taken={[...picked, ...linkedIds]}
+              onName={(name) => setGuestField(g.id, { name })}
+              onHcp={(handicap) => setGuestField(g.id, { handicap })}
+              onLink={(p) => setGuestField(g.id, {
+                link: { playerId: p.id, name: p.name, handicap: p.handicap, group: p.groups[0] ?? 'Guest' },
+              })}
+              onUnlink={() => setGuestField(g.id, { link: undefined })}
+              onRemove={() => removeGuest(g.id)}
+            />
           ))}
 
           {guests.length < maxGuests && (
             <button className="guest-add" onClick={addGuest}>+ Add guest</button>
           )}
-          {guests.length > 0 && (
+          {plainGuests.length > 0 && (
             <div className="hcp-note">
               Guests play the round and count for the match, but keep no history —
               their scores stay on this round only, and never reach the leaderboard
-              or handicaps. Type a handicap: it sets their strokes and can change
+              or handicaps. Type their name to link a member of another group
+              instead. Type a handicap: it sets their strokes and can change
               everyone else&rsquo;s if they&rsquo;re the lowest in the field.
+            </div>
+          )}
+          {linkedIds.length > 0 && (
+            <div className="hcp-note">
+              Linked players play as their real selves — this round counts toward
+              their handicap and shows in their history, tagged to this group.
             </div>
           )}
           {!meOnCard && field.length > 0 && (
@@ -540,6 +563,86 @@ function Setup({ course, onStart, meId }: {
   )
 }
 
+
+/* One guest seat: a typed guest, or — once a name matches a registered player
+   from another group — a link to that player. The type-ahead only opens while
+   the name field is focused and there's a match not already on the card. */
+function GuestSeatRow({
+  seat, others, taken, onName, onHcp, onLink, onUnlink, onRemove,
+}: {
+  seat: GuestSeat
+  others: LinkablePlayer[]
+  taken: number[]
+  onName: (name: string) => void
+  onHcp: (handicap: number) => void
+  onLink: (p: LinkablePlayer) => void
+  onUnlink: () => void
+  onRemove: () => void
+}) {
+  const [focused, setFocused] = useState(false)
+
+  if (seat.link) {
+    return (
+      <div className="guest-row linked">
+        <span className="guest-chip linked" aria-hidden>↗</span>
+        <div className="guest-linked-name">
+          <span className="pname">{seat.link.name}</span>
+          <span className="guest-group-tag">{seat.link.group} · {seat.link.handicap.toFixed(1)}</span>
+        </div>
+        <button className="guest-unlink" onClick={onUnlink}>Unlink</button>
+        <button className="guest-x" aria-label="Remove player" onClick={onRemove}>×</button>
+      </div>
+    )
+  }
+
+  const q = seat.name.trim().toLowerCase()
+  const matches = q.length > 0
+    ? others.filter((o) => !taken.includes(o.id) && o.name.toLowerCase().includes(q)).slice(0, 6)
+    : []
+
+  return (
+    <div className="guest-row-wrap">
+      <div className="guest-row">
+        <span className="guest-chip">G</span>
+        <input
+          className="guest-name"
+          type="text"
+          placeholder="Guest name"
+          value={seat.name}
+          onChange={(e) => onName(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+        />
+        <input
+          className="guest-hcp"
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          aria-label="Guest handicap"
+          value={Number.isFinite(seat.handicap) ? seat.handicap : ''}
+          onChange={(e) => onHcp(Number(e.target.value))}
+        />
+        <button className="guest-x" aria-label="Remove guest" onClick={onRemove}>×</button>
+      </div>
+      {focused && matches.length > 0 && (
+        <div className="guest-suggest">
+          {matches.map((o) => (
+            <button
+              key={o.id}
+              className="guest-suggest-item"
+              // mousedown (not click) so the pick lands before the input's blur.
+              onMouseDown={(e) => { e.preventDefault(); onLink(o) }}
+            >
+              <span className="gs-link" aria-hidden>🔗</span>
+              <span className="gs-name">{o.name}</span>
+              <span className="gs-meta">{o.groups.join(', ')} · {o.handicap.toFixed(1)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /* Per-player stroke summary shown before format is chosen. */
 function StrokePreview({

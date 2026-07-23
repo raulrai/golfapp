@@ -160,6 +160,27 @@ export async function allMembersOf(playerIds: number[], groupId: number): Promis
   return Number(row.c) === new Set(playerIds).size
 }
 
+/** Which of these players belong to this group — the round is anchored to (and
+ *  filed under) this group, so at least one of them must come back. The rest are
+ *  visiting players from other groups (see allRegisteredPlayers). */
+export async function membersInGroup(playerIds: number[], groupId: number): Promise<Set<number>> {
+  if (playerIds.length === 0) return new Set()
+  const rows = await sql`
+    SELECT player_id FROM player_groups
+    WHERE group_id = ${groupId} AND player_id = ANY(${playerIds})`
+  return new Set(rows.map((r) => Number(r.player_id)))
+}
+
+/** Do all of these ids reference a real registered account? A guest seat may
+ *  only be linked to a genuine player, so a visiting id that matches no players
+ *  row is rejected rather than written as an orphan score. */
+export async function allRegisteredPlayers(playerIds: number[]): Promise<boolean> {
+  if (playerIds.length === 0) return true
+  const [row] = await sql`
+    SELECT COUNT(*) c FROM players WHERE id = ANY(${playerIds})`
+  return Number(row.c) === new Set(playerIds).size
+}
+
 /** Is this player one of the live round's fourball? (Edit rights are fourball-wide.) */
 export async function requireRoundMember(liveRoundId: number, playerId: number): Promise<boolean> {
   const rows = await sql`
