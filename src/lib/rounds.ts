@@ -110,7 +110,11 @@ export type PersistResult =
  *  hole_scores rows — they have no players row to reference — and are written
  *  instead as one rounds.guests JSONB snapshot. Their cards still count for the
  *  match, so History rebuilds the full field from that blob before recomputing. */
-export async function persistFinishedRound(body: SaveBody, group: Group): Promise<PersistResult> {
+export async function persistFinishedRound(
+  body: SaveBody,
+  group: Group,
+  opts?: { liveRoundId?: number },
+): Promise<PersistResult> {
   const { scoringMode, players, scores, handicap_pct = 75 } = body
   const money = group.tracksMoney ? (body.money ?? {}) : {}
   // Only hole-by-hole rounds carry a recomputable match; total-only rounds don't.
@@ -215,6 +219,17 @@ export async function persistFinishedRound(body: SaveBody, group: Group): Promis
         INSERT INTO round_moments (round_id, hole, player_ids, tag, note, ts)
         VALUES (${round.id}, ${m.hole}, ${m.players as number[]}, ${m.tag}, ${m.note ?? null},
                 ${m.ts ? new Date(m.ts) : new Date()})`
+    }
+
+    // Retiring the live round is part of the SAME commit as writing History —
+    // so "in History" and "gone from Live" can never come apart. Guarded on
+    // status = 'finishing' (the caller's claim), so a retry after this committed
+    // finds the row already 'finished' and short-circuits before re-inserting.
+    if (opts?.liveRoundId != null) {
+      await tx`
+        UPDATE live_rounds
+        SET status = 'finished', round_id = ${Number(round.id)}, version = version + 1, updated_at = NOW()
+        WHERE id = ${opts.liveRoundId} AND status = 'finishing'`
     }
 
     return Number(round.id)

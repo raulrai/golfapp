@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import sql from '@/lib/db'
 import { requireGroupMember, isErr, forbidden, allMembersOf } from '@/lib/auth'
 import { isGuest, maxGuestsFor } from '@/lib/golf/types'
 import { persistFinishedRound } from '@/lib/rounds'
@@ -41,5 +42,27 @@ export async function POST(req: NextRequest) {
       { status: result.status },
     )
   }
+
+  // Entering a score outside the live round (Solo / "Enter a Score" sheet) writes
+  // History but never touches live_rounds — leaving an orphaned 'live' row. If
+  // exactly ONE open live round in this group has the same player set, retire it
+  // too, so it drops out of Live. Zero or multiple matches: leave it for the 18h
+  // idle backstop rather than risk retiring a genuinely different round.
+  try {
+    const wanted = [...new Set(allIds)].sort((a, b) => a - b).join(',')
+    const open = await sql`
+      SELECT id, player_ids FROM live_rounds
+      WHERE group_id = ${group.id} AND status IN ('live', 'finishing')`
+    const matches = open.filter((r) =>
+      [...new Set((r.player_ids as (number | string)[]).map(Number))].sort((a, b) => a - b).join(',') === wanted,
+    )
+    if (matches.length === 1) {
+      await sql`
+        UPDATE live_rounds
+        SET status = 'finished', round_id = ${result.roundId}, version = version + 1, updated_at = NOW()
+        WHERE id = ${matches[0].id} AND status IN ('live', 'finishing')`
+    }
+  } catch { /* reconciliation is best-effort; the 18h backstop still applies */ }
+
   return NextResponse.json({ round_id: result.roundId }, { status: 201 })
 }

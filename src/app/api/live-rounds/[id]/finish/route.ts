@@ -37,7 +37,11 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
   }
 
   try {
-    const result = await persistFinishedRound(gameToSaveBody(claimed[0].game as Game), group)
+    // The status flip to 'finished' happens INSIDE persistFinishedRound's
+    // transaction, so the History write and leaving Live commit together.
+    const result = await persistFinishedRound(
+      gameToSaveBody(claimed[0].game as Game), group, { liveRoundId: liveId },
+    )
     if ('error' in result) {
       await sql`
         UPDATE live_rounds SET status = 'live', version = version + 1, updated_at = NOW()
@@ -47,9 +51,6 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
         { status: result.status },
       )
     }
-    await sql`
-      UPDATE live_rounds SET status = 'finished', round_id = ${result.roundId}, version = version + 1, updated_at = NOW()
-      WHERE id = ${liveId}`
     return NextResponse.json({ roundId: result.roundId })
   } catch (e) {
     await sql`
