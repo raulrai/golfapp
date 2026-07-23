@@ -156,7 +156,7 @@ export default function Home() {
 
         {me && <LiveNowTeaser />}
 
-        {me && tracksMoney && <QuickLeaderboard key={refresh} />}
+        {me && <WeeklyRounds key={refresh} />}
       </div>
 
       {showPicker && (
@@ -216,29 +216,71 @@ function LiveNowTeaser() {
   )
 }
 
-function QuickLeaderboard() {
-  const [data, setData] = useState<{ byMoney: { name: string; money: number }[] } | null>(null)
-  useEffect(() => { fetch('/api/leaderboard').then(r => (r.ok ? r.json() : null)).then(setData) }, [])
-  if (!data || data.byMoney.length === 0) return null
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <span className="lbl">Order of Merit</span>
-        <Link href="/leaderboard">All →</Link>
+type WeekEntry = {
+  player_id: number
+  name: string
+  round_id: number
+  gross: number | null
+  net: number
+  played_at: string
+}
+
+/** Net vs par, shown as a signed integer (negative = under par net = better). */
+function netLabel(net: number): string {
+  const r = Math.round(net)
+  if (r === 0) return 'net E'
+  return `net ${r > 0 ? '+' : '−'}${Math.abs(r)}`
+}
+
+/** The week's 5 best and 5 worst net rounds — the home page's play highlight,
+ *  shown for every group (score-based, no money). */
+function WeeklyRounds() {
+  const [data, setData] = useState<{ best: WeekEntry[]; worst: WeekEntry[] } | null>(null)
+  useEffect(() => {
+    fetch('/api/weekly-rounds').then(r => (r.ok ? r.json() : null)).then(setData).catch(() => setData(null))
+  }, [])
+
+  if (!data) return null
+
+  const row = (e: WeekEntry, i: number, best: boolean) => (
+    <div key={`${e.round_id}:${e.player_id}`} className="panel-row">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span className={best && i === 0 ? 'gold-text' : 'muted'} style={{ fontSize: 12, fontWeight: 700, width: 18, textAlign: 'center' }}>
+          {best && i === 0 ? '🏅' : i + 1}
+        </span>
+        <span style={{ fontWeight: 600, fontSize: 15 }}>{e.name}</span>
       </div>
-      {data.byMoney.slice(0, 5).map((p, i) => (
-        <div key={p.name} className="panel-row">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span className={i === 0 ? 'gold-text' : 'muted'} style={{ fontSize: 12, fontWeight: 700, width: 18, textAlign: 'center' }}>
-              {i === 0 ? '🏅' : i + 1}
-            </span>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>{p.name}</span>
-          </div>
-          <span className={p.money >= 0 ? 'pos' : 'neg'} style={{ fontWeight: 700, fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
-            {p.money >= 0 ? '+' : '−'}₹{Math.abs(p.money).toLocaleString('en-IN')}
-          </span>
-        </div>
-      ))}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.2 }}>
+        <span className={best ? 'pos' : 'neg'} style={{ fontWeight: 700, fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
+          {netLabel(e.net)}
+        </span>
+        {e.gross != null && <span className="muted" style={{ fontSize: 12 }}>gross {e.gross}</span>}
+      </div>
     </div>
+  )
+
+  return (
+    <>
+      <div className="panel">
+        <div className="panel-head">
+          <span className="lbl">Best rounds this week</span>
+          <Link href="/history">History →</Link>
+        </div>
+        {data.best.length === 0 ? (
+          <div className="muted" style={{ padding: '6px 2px', fontSize: 14 }}>No rounds recorded this week yet.</div>
+        ) : (
+          data.best.map((e, i) => row(e, i, true))
+        )}
+      </div>
+
+      {data.worst.length > 0 && (
+        <div className="panel">
+          <div className="panel-head">
+            <span className="lbl">Worst rounds this week</span>
+          </div>
+          {data.worst.map((e, i) => row(e, i, false))}
+        </div>
+      )}
+    </>
   )
 }
