@@ -13,9 +13,15 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     WHERE r.id = ${Number(id)}`
   if (!round) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   // A round is group-scoped: 404 rather than 403, so the other group's round ids
-  // aren't probeable.
+  // aren't probeable. Exception: a player who actually PLAYED in the round may
+  // open its card from any group — a cross-group round shows in their (global)
+  // history, and its scorecard should open from there. Non-participants still 404.
   if (Number(round.group_id) !== session.group.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const played = await sql`
+      SELECT 1 FROM scores WHERE round_id = ${round.id} AND player_id = ${session.playerId} LIMIT 1`
+    if (played.length === 0) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
   }
 
   const players = await sql`
