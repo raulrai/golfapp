@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import sql from '@/lib/db'
-import { requireGroupMember, isErr, forbidden, allMembersOf } from '@/lib/auth'
+import { requireGroupMember, isErr, forbidden, membersInGroup, allRegisteredPlayers } from '@/lib/auth'
 import { isGuest, maxGuestsFor } from '@/lib/golf/types'
 import { persistFinishedRound } from '@/lib/rounds'
 import type { SaveBody } from '@/lib/rounds'
@@ -13,8 +13,9 @@ export async function POST(req: NextRequest) {
   const body = (await req.json()) as SaveBody
   const allIds = (body.players ?? []).map((p) => Number(p.id))
   // Guests carry negative ids and have no players row — they are checked by
-  // count, not membership. Everyone else must belong to the group.
-  const memberIds = allIds.filter((id) => !isGuest(id))
+  // count, not membership. Positive ids are real accounts: either this group's
+  // members or visiting players linked in from another group.
+  const positiveIds = allIds.filter((id) => !isGuest(id))
   const guestIds = allIds.filter((id) => isGuest(id))
 
   if (allIds.some((id) => !Number.isInteger(id) || id === 0)) {
@@ -23,16 +24,21 @@ export async function POST(req: NextRequest) {
   if (guestIds.length > maxGuestsFor(allIds.length) || new Set(guestIds).size !== guestIds.length) {
     return NextResponse.json({ error: 'Too many guests for this field' }, { status: 400 })
   }
-  // A round is always somebody's. The admin bypass below would otherwise let an
-  // all-guest card through, and it would belong to nobody's history.
-  if (memberIds.length === 0) {
+  // Split the real accounts into this group's members and visitors from elsewhere.
+  const inGroup = await membersInGroup(positiveIds, group.id)
+  const visitorIds = positiveIds.filter((id) => !inGroup.has(id))
+  // A round is filed under, and anchored to, this group — so at least one member
+  // must be on it. This also stops the admin bypass below from saving an
+  // all-guest or all-visitor card that would belong to nobody's group history.
+  if (inGroup.size === 0) {
     return NextResponse.json({ error: 'A round needs at least one group member' }, { status: 400 })
   }
   // You may only save a round you played in — unless you're an admin of this group.
-  if (!memberIds.includes(playerId) && !isAdmin) return forbidden()
-  // Every non-guest on the card must belong to the group the round is filed under.
-  if (!(await allMembersOf(memberIds, group.id))) {
-    return NextResponse.json({ error: 'Some players are not in this group' }, { status: 400 })
+  if (!inGroup.has(playerId) && !isAdmin) return forbidden()
+  // A visiting player must be a genuine registered account (linked from another
+  // group), never an orphan id.
+  if (!(await allRegisteredPlayers(visitorIds))) {
+    return NextResponse.json({ error: 'Some players are not registered' }, { status: 400 })
   }
 
   const result = await persistFinishedRound(body, group)
